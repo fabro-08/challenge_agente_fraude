@@ -1,0 +1,335 @@
+# Reporte de Revisión de Código
+
+**Archivo analizado:** `test_agents/test_reviewer.py`  
+**Fecha:** $(date '+%Y-%m-%d %H:%M:%S')  
+**Total de líneas:** 143  
+
+---
+
+## Resumen Ejecutivo
+
+| Severidad  | Cantidad |
+|------------|----------|
+| Crítico    | 21       |
+| Alto       | 5        |
+| Medio      | 4        |
+| Bajo       | 3        |
+| Informativo| 3        |
+| **Total**  | **36**   |
+
+---
+
+## 1. 🔴 Seguridad
+
+### 1.1 Hardcoded API Key
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:5` |
+| Descripción   | La clave API `sk-1234567890abcdef1234567890abcdef` está hardcodeada en el código fuente. |
+| Recomendación | Usar variables de entorno o un vault de secrets. Eliminar del repositorio. |
+
+### 1.2 Hardcoded DB Password
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:7` |
+| Descripción   | La contraseña de base de datos `super_secret_123` está hardcodeada. |
+| Recomendación | Usar variables de entorno o secret manager. Eliminar del repositorio. |
+
+### 1.3 SQL Injection — `get_users` (orders loop)
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:18` |
+| Descripción   | `user_id` se interpola directamente en la consulta SQL vía f-string sin parametrizar. |
+| Recomendación | Usar consultas parametrizadas: `cursor.execute("SELECT * FROM orders WHERE user_id = ?", (user_id,))` |
+
+### 1.4 SQL Injection — `get_user`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:26` |
+| Descripción   | `user_id` se interpola directamente en la consulta SQL. |
+| Recomendación | Usar `cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))` |
+
+### 1.5 SQL Injection — `create_user`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:33` |
+| Descripción   | `name` y `email` se interpolan directamente, permitiendo inyección SQL. |
+| Recomendación | Usar `cursor.execute("INSERT INTO users (name, email) VALUES (?, ?)", (name, email))` |
+
+### 1.6 SQL Injection — `delete_user`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:40` |
+| Descripción   | `user_id` se interpola directamente en DELETE. |
+| Recomendación | Usar consulta parametrizada con placeholder `?`. |
+
+### 1.7 SQL Injection — `get_orders`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:48` |
+| Descripción   | `user_id` se interpola directamente en SELECT. |
+| Recomendación | Usar `cursor.execute("SELECT * FROM orders WHERE user_id = ?", (user_id,))` |
+
+### 1.8 SQL Injection — `calculate_total`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:54` |
+| Descripción   | `order_id` se interpola directamente en SELECT. |
+| Recomendación | Usar consulta parametrizada con placeholder `?`. |
+
+### 1.9 SQL Injection — `process_payment`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:66` |
+| Descripción   | `user_id` y `amount` se interpolan directamente en UPDATE de balance. |
+| Recomendación | Usar `cursor.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (amount, user_id))` |
+
+### 1.10 `exec()` con entrada peligrosa
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:74` |
+| Descripción   | `exec(f"print('Sending email to {to}')")` — `exec()` ejecuta código arbitrario. `to` se interpola directamente permitiendo inyección de código Python. |
+| Recomendación | Eliminar `exec()`. Usar logging o print simple: `print(f"Sending email to {to}")` |
+
+### 1.11 `subprocess.run` con `shell=True`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:90` |
+| Descripción   | `subprocess.run(source, shell=True)` ejecuta el parámetro `source` como comando del shell sin sanitización, permitiendo inyección de comandos. |
+| Recomendación | Evitar `shell=True`. Usar `subprocess.run(source.split())` o pasar args como lista. Validar `source`. |
+
+### 1.12 `pickle.loads()` con datos no confiables
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:108` |
+| Descripción   | `pickle.loads(data)` deserializa datos arbitrarios permitiendo ejecución remota de código. |
+| Recomendación | Usar formatos seguros como JSON. Si pickle es indispensable, validar estrictamente la procedencia de `data`. |
+
+### 1.13 `tempfile.mktemp()` inseguro
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:102` |
+| Descripción   | `tempfile.mktemp()` está deprecado y es vulnerable a condiciones de carrera (TOCTOU). |
+| Recomendación | Usar `tempfile.mkdtemp()` o `tempfile.TemporaryDirectory()` como context manager. |
+
+### 1.14 `shutil.rmtree` sobre ruta generada
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:103` |
+| Descripción   | Se borra recursivamente la ruta generada por `mktemp()` sin verificar que sea el directorio correcto. |
+| Recomendación | Usar `tempfile.TemporaryDirectory()` que garantiza limpieza segura. |
+
+---
+
+## 2. 🔶 Calidad del Código
+
+### 2.1 El archivo se llama `test_` pero no contiene tests
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:1` |
+| Descripción   | El archivo sigue la convención de nombre de test (`test_*`) pero no contiene ninguna aserción, clase de unittest, o test de pytest. Es un módulo de aplicación disfrazado de test. |
+| Recomendación | Renombrar a `reviewer.py` y mover a un directorio de aplicación, o agregar tests reales. |
+
+### 2.2 Código muerto — `unused_function`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:77-81` |
+| Descripción   | La función `unused_function()` no es llamada por ningún otro código. |
+| Recomendación | Eliminarla o documentar su propósito si es necesaria. |
+
+### 2.3 Bloque condicional muerto
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | bajo |
+| Archivo:línea | `test_agents/test_reviewer.py:111-115` |
+| Descripción   | Las líneas `x = 10` seguidas de `if x > 5: pass else: pass` no tienen efecto lógico. |
+| Recomendación | Eliminar el bloque. |
+
+### 2.4 Sin docstrings ni type hints
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:9-143` |
+| Descripción   | Ninguna clase, método o función tiene docstring o type hints. |
+| Recomendación | Agregar docstrings (PEP 257) y type hints (PEP 484) en todas las firmas. |
+
+### 2.5 Imports dentro de funciones
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | bajo |
+| Archivo:línea | `test_agents/test_reviewer.py:89,100,107,133` |
+| Descripción   | `subprocess`, `shutil`, `tempfile`, `pickle`, `sys` se importan dentro de funciones en lugar del tope del módulo. |
+| Recomendación | Mover todos los imports al inicio del archivo (PEP 8). |
+
+### 2.6 Conexiones a DB nunca se cierran
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:11-70` |
+| Descripción   | Ninguna conexión SQLite se cierra explícitamente. En todas las funciones se crea `conn` pero nunca se llama `conn.close()`. |
+| Recomendación | Usar context manager `with sqlite3.connect(...) as conn:` o finally block para cerrar conexiones. |
+
+### 2.7 Nombre de archivo engañoso
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py` |
+| Descripción   | El archivo contiene lógica de negocios (UserService, OrderService, DataProcessor) no relacionada con testing. |
+| Recomendación | Dividir en módulos con responsabilidades claras. |
+
+### 2.8 `nested_loops` sin uso
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | bajo |
+| Archivo:línea | `test_agents/test_reviewer.py:118-124` |
+| Descripción   | Función con triple loop anidado O(n³) que no se utiliza en ninguna parte. |
+| Recomendación | Eliminar o mover a un módulo de benchmarks si es necesaria. |
+
+---
+
+## 3. 🟡 Mejores Prácticas
+
+### 3.1 Sin manejo de errores (try/except)
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:9-108` |
+| Descripción   | Ninguna operación (DB, archivos, subprocess) usa try/except. Cualquier error propaga excepción no manejada. |
+| Recomendación | Agregar manejo de errores en todas las operaciones de I/O y base de datos. |
+
+### 3.2 Sin validación de entrada
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:23-108` |
+| Descripción   | Parámetros como `user_id`, `name`, `email`, `amount`, `source` no se validan antes de usar. Pueden ser `None`, string vacío, o tipos incorrectos. |
+| Recomendación | Validar tipo, rango y contenido de todas las entradas públicas. |
+
+### 3.3 Retorno inconsistente
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:35` |
+| Descripción   | `create_user` retorna `True` hardcodeado, mientras `delete_user` no retorna nada. |
+| Recomendación | Estandarizar retornos: retornar el registro creado, el id, o usar patrón Result. |
+
+### 3.4 `process_payment` no es transactional segura
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:65-70` |
+| Descripción   | No se verifica que `balance >= amount` antes de debitar. Tampoco hay rollback en caso de error. |
+| Recomendación | Agregar chequeo de saldo suficiente y manejo de rollback. |
+
+---
+
+## 4. 🟠 Performance
+
+### 4.1 N+1 Query en `get_users`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | crítico |
+| Archivo:línea | `test_agents/test_reviewer.py:16-19` |
+| Descripción   | Por cada usuario obtenido se ejecuta una consulta adicional para obtener sus órdenes (N+1). Con 1000 usuarios, se ejecutan 1001 queries. |
+| Recomendación | Usar JOIN: `SELECT u.*, o.* FROM users u LEFT JOIN orders o ON u.id = o.user_id` |
+
+### 4.2 I/O masiva en `DataProcessor.process`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:93-97` |
+| Descripción   | Escribe 1000 archivos individuales en `/tmp/` en un bucle, causando alta latencia de I/O. |
+| Recomendación | Acumular en memoria y escribir una sola vez, o usar un solo archivo con append. |
+
+### 4.3 Sin reutilización de conexiones a DB
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py:11,24,31,38,46,52,67` |
+| Descripción   | Cada método abre una nueva conexión a SQLite. Para una misma sesión se abren múltiples conexiones innecesarias. |
+| Recomendación | Usar un pool de conexiones o una conexión compartida a nivel de clase/sesión. |
+
+### 4.4 Tripe loop O(n³) en `nested_loops`
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | medio |
+| Archivo:línea | `test_agents/test_reviewer.py:120-123` |
+| Descripción   | Tres bucles anidados generan complejidad O(n³). Con n=1000 son 1×10⁹ iteraciones. |
+| Recomendación | Eliminar función si no se usa, o documentar que es O(n³) y limitar n. |
+
+---
+
+## 5. 🟢 Validación de Objetivos
+
+### 5.1 El módulo no cumple su propósito nominal
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | alto |
+| Archivo:línea | `test_agents/test_reviewer.py` |
+| Descripción   | Un archivo nombrado `test_reviewer.py` debería contener tests para un `reviewer`, pero contiene implementación de servicios, pagos, envío de correos y procesamiento de datos sin relación. |
+| Recomendación | Crear tests reales, o renombrar/mover la lógica de negocio a módulos apropiados. |
+
+### 5.2 `main` no prueba nada
+| Campo         | Valor |
+|---------------|-------|
+| Severidad     | informativo |
+| Archivo:línea | `test_agents/test_reviewer.py:132-139` |
+| Descripción   | La función `main()` toma un argumento de línea de comandos y llama a `get_user`, pero no realiza ninguna verificación o aserción. |
+| Recomendación | Si es un CLI, usar `argparse`. Si es un test, agregar assertions. |
+
+---
+
+## Anexo: Resumen por archivo
+
+Archivo: `test_agents/test_reviewer.py`
+
+| #  | Categoría       | Severidad    | Línea   | Descripción breve                              |
+|----|-----------------|--------------|---------|------------------------------------------------|
+| 1  | Seguridad       | crítico      | 5       | API Key hardcodeada                           |
+| 2  | Seguridad       | crítico      | 7       | DB Password hardcodeada                       |
+| 3  | Seguridad       | crítico      | 18      | SQL Injection (N+1 loop)                      |
+| 4  | Seguridad       | crítico      | 26      | SQL Injection (get_user)                      |
+| 5  | Seguridad       | crítico      | 33      | SQL Injection (create_user)                   |
+| 6  | Seguridad       | crítico      | 40      | SQL Injection (delete_user)                   |
+| 7  | Seguridad       | crítico      | 48      | SQL Injection (get_orders)                    |
+| 8  | Seguridad       | crítico      | 54      | SQL Injection (calculate_total)               |
+| 9  | Seguridad       | crítico      | 66      | SQL Injection (process_payment)               |
+| 10 | Seguridad       | crítico      | 74      | exec() con entrada peligrosa                  |
+| 11 | Seguridad       | crítico      | 90      | subprocess con shell=True                     |
+| 12 | Seguridad       | crítico      | 108     | pickle.loads() inseguro                       |
+| 13 | Seguridad       | alto         | 102     | tempfile.mktemp() inseguro                    |
+| 14 | Seguridad       | medio        | 103     | shutil.rmtree sin verificación                |
+| 15 | Mejores Prácticas| crítico     | 23-108  | Sin validación de entrada                     |
+| 16 | Mejores Prácticas| alto        | 9-108   | Sin manejo de errores                         |
+| 17 | Mejores Prácticas| medio       | 35      | Retorno inconsistente                         |
+| 18 | Mejores Prácticas| medio       | 65-70   | process_payment sin chequeo de saldo          |
+| 19 | Calidad         | alto         | 1       | Nombre `test_` sin tests                      |
+| 20 | Calidad         | alto         | 11-70   | Conexiones DB nunca cerradas                  |
+| 21 | Calidad         | medio        | 77-81   | Código muerto (unused_function)               |
+| 22 | Calidad         | medio        | archivo  | Nombre engañoso, viola SRP                    |
+| 23 | Calidad         | bajo         | 111-115 | Bloque condicional muerto                     |
+| 24 | Calidad         | bajo         | 89,100..| Imports dentro de funciones                   |
+| 25 | Calidad         | bajo         | 118-124 | nested_loops O(n³) sin uso                    |
+| 26 | Calidad         | informativo  | 9-143   | Sin docstrings ni type hints                  |
+| 27 | Performance     | crítico      | 16-19   | N+1 query en get_users                        |
+| 28 | Performance     | alto         | 93-97   | I/O masiva (1000 archivos)                    |
+| 29 | Performance     | alto         | 11-70   | Sin reutilización de conexiones               |
+| 30 | Performance     | medio        | 120-123 | Triple loop O(n³)                             |
+| 31 | Validación      | alto         | archivo  | No cumple propósito de test                   |
+| 32 | Validación      | informativo  | 132-139 | main() no verifica nada                       |
