@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (mantener Dataset original, ignorar generados)
+data/synthetic/
+
+# Docker
+pgdata/
+
+# OS
+.DS_Store
+
+# Proceso interno de agentes (fuera del entregable)
+.harness/
+.opencode/
+feature_list.json
+opencode.json
