@@ -110,8 +110,9 @@ El estado precargado permite mostrar la demo sin depender del LLM en tiempo real
 | 6 | **Batch parametrizado** | `POST /analyze/batch {"limite": 5}` → poll `/jobs/{id}` |
 | 7 | **Editar regla + simular** | pestaña "Reglas" de la UI (versión + impacto sin guardar) |
 
-Los casos 1-4 ya tienen `llm_resultado` persistido, así que la demo carga al
-instante. El re-análisis de un caso ambiguo tarda ~15-24 s (espera del LLM);
+Los casos 1-2 se resuelven por reglas (al instante); los casos 3-4 (ambigüedad y
+marca) ya tienen el `llm_resultado` persistido, así que la demo carga sin esperar
+al LLM. El re-análisis de un caso ambiguo tarda ~15-24 s (espera del LLM);
 el batch corre en background y es parametrizable con `limite`.
 
 ```bash
