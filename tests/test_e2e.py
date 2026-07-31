@@ -43,7 +43,7 @@ def _body_text(page: Page) -> str:
 def test_dashboard_carga(page: Page, services):
     _go(page, "dashboard")
     texto = _body_text(page).lower()
-    assert "dashboard" in page.title().lower()
+    assert "compensaciones" in page.title().lower()
     assert "total" in texto
     _screenshot(page, "dashboard")
 
@@ -60,7 +60,7 @@ def test_dashboard_metricas(page: Page, services):
 
 def test_casos_carga(page: Page, services):
     _go(page, "cases")
-    assert "cases" in page.title().lower()
+    assert "compensaciones" in page.title().lower()
     assert not page.locator("text=Error").is_visible()
     _screenshot(page, "cases")
 
@@ -129,7 +129,7 @@ def test_ui_carga(page: Page, services):
     page.wait_for_load_state("networkidle")
     dt = time.time() - t0
     assert dt < 20.0, f"UI tardó {dt:.1f}s en cargar"
-    assert "dashboard" in page.title().lower()
+    assert "compensaciones" in page.title().lower()
 
 
 def cualquier_contiene(palabras: list[str], texto: str) -> bool:
