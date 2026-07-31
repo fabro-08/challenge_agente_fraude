@@ -1,0 +1,77 @@
+# Thresholds centralizados para las reglas de decisión
+# Valores derivados del EDA (step 01) + feature engineering (step 02).
+# NO hardcodear estos valores en la lógica — siempre leer desde este YAML.
+# Calculados sobre los 150 casos originales con features.
+
+# ── Reglas de RECHAZAR ───────────────────────────────────────────────
+
+rechazar:
+  flags_minimos:
+    valor: 2
+    descripcion: "Usuario con 2 o más flags de fraude previos"
+    fuente: "EDA: flags_fraude_previos correlaciona r=0.74 con num_compensaciones_90d"
+
+  comp_ratio_maximo:
+    valor: 0.99
+    descripcion: "Compensación solicitada > 99% del valor de la orden"
+    fuente: "EDA: p99 de comp_ratio = 0.99 sobre 150 casos. Nadie pide más de lo que pagó"
+
+  freq_densidad_maximo:
+    valor: 0.66
+    descripcion: "freq_densidad > p95 del dataset original"
+    fuente: "EDA: p95 de freq_densidad = 0.66. Más de 0.66 reclamos/día es atípico"
+
+  compensacion_p99:
+    valor: 604.64
+    descripcion: "Compensación solicitada > p99 del dataset original"
+    fuente: "EDA: p99 compensacion_solicitada_mxn = 604.64"
+
+  flag_inconsistencia_gps:
+    valor: true
+    descripcion: "Usuario dice 'Orden no llegó' pero GPS confirma entrega"
+    fuente: "Feature flag_inconsistencia_gps del step 02 (9 casos originales)"
+
+  score_riesgo_previo_maximo:
+    valor: 10.0
+    descripcion: "score_riesgo_previo (flags×2 + comps_90d×0.5) > p90"
+    fuente: "Step 02: p90 de score_riesgo_previo = 10.0"
+
+  flag_account_abuse:
+    valor: true
+    descripcion: "Usuario < 90 días de antigüedad con > p95 reclamos en 90d"
+    fuente: "EDA: usuarios 0-30d tienen 8.6 reclamos media vs 1.5 en 365d+"
+
+# ── Reglas de APROBAR ────────────────────────────────────────────────
+
+aprobar:
+  retraso_critico_con_motivo:
+    descripcion: "Entrega demorada (> p90 = 96 min) Y queja coherente con demora"
+    fuente: "EDA: p90 tiempo_entrega_real_min = 96 min. Auto-aprobar si datos respaldan"
+    motivos_elegibles:
+      - "Orden llegó tarde"
+      - "Producto en mal estado"
+
+  usuario_sano:
+    descripcion: "Sin flags, comp_ratio bajo, GPS ok, pocos reclamos, antigüedad > 90d"
+    fuente: "Coherencia: usuario legítimo sin señales de fraude"
+    condiciones:
+      flags_max: 0
+      comp_ratio_max: 0.8
+      comps_90d_max: 2
+      antiguedad_min: 90
+
+  gps_ok_sano:
+    descripcion: "GPS confirmado, sin retraso, ratio normal, usuario antiguo"
+    fuente: "Perfil de usuario legítimo con historial"
+    condiciones:
+      comp_ratio_max: 1.0
+      antiguedad_min: 90
+
+# ── Reglas de ESCALAR (forzoso) ──────────────────────────────────────
+
+escalar_forzoso:
+  flag_palabras_criticas:
+    valor: true
+    descripcion: "Reclamo menciona alergia, intoxicación, policía, sangre, abogado, demanda"
+    fuente: "Feature flag_palabras_criticas del step 02. Seguridad de marca."
+
