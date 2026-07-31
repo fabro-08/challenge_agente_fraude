@@ -1,0 +1,61 @@
+name: rappi-caso3
+
+services:
+  db:
+    image: postgres:16
+    container_name: rappi_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rappi_cases
+      POSTGRES_USER: rappi
+      POSTGRES_PASSWORD: rappi_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rappi -d rappi_cases"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/api/Dockerfile
+    container_name: rappi_api
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: rappi_cases
+      DB_USER: rappi
+      DB_PASSWORD: rappi_pass
+    env_file:
+      - ../.env
+    # Puerto no mapeado: la API se ejecuta localmente en desarrollo.
+    # En producción (Docker), exponer con: ports: ["8000:8000"]
+    volumes:
+      - ../src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: ..
+      dockerfile: infra/ui/Dockerfile
+    container_name: rappi_ui
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      API_TIMEOUT: "60"
+      ANALYZE_TIMEOUT: "120"
+    # Puerto no mapeado: la UI se ejecuta localmente en desarrollo.
+    # En producción (Docker), exponer con: ports: ["8501:8501"]
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
