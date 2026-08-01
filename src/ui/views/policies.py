@@ -44,5 +44,5 @@ def render_policies() -> None:
         thresholds_data,
         columns=["Regla", "Umbral", "Campo"],
     )
-    st.dataframe(df_thresholds, use_container_width=True, hide_index=True)
+    st.dataframe(df_thresholds, width="stretch", hide_index=True)
 render_policies()

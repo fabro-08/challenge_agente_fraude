@@ -1,8 +1,10 @@
 -- 01_create_tables.sql
 -- Esquema base del Caso 03: revisión de compensaciones por posible fraude.
--- Columnas mapeadas desde data/Dataset_caso_3.xlsx (pestaña Caso3_Compensaciones).
+-- Tabla `cases`: SOLO datos crudos del caso (capa 1 de 3).
+-- Las features derivadas viven en `features` (02) y las decisiones del
+-- pipeline en `resolution_case` (05).
 
-CREATE TABLE IF NOT EXISTS casos (
+CREATE TABLE IF NOT EXISTS cases (
     -- Identidad
     caso_id                     VARCHAR(20) PRIMARY KEY,
     usuario_id                  VARCHAR(50) NOT NULL,
@@ -25,23 +27,12 @@ CREATE TABLE IF NOT EXISTS casos (
     -- Columna objetivo (vacía en el dataset, la llena el agente)
     recomendacion_agente        VARCHAR(20),
 
-    -- Features derivadas (step 02)
-    comp_ratio                  NUMERIC(10, 4),
-    comps_por_dia               NUMERIC(10, 6),
-    monto_promedio_comp         NUMERIC(12, 2),
-    gps_match_ok                BOOLEAN,
-    entrega_demorada            BOOLEAN,
-
-    -- Salidas del pipeline (steps 06-07)
-    justificacion               TEXT,
-    senales_usadas              TEXT,
-
     -- Metadata
     es_sintetico                BOOLEAN DEFAULT FALSE,
     created_at                  TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_casos_usuario_id ON casos(usuario_id);
-CREATE INDEX IF NOT EXISTS idx_casos_recomendacion ON casos(recomendacion_agente);
-CREATE INDEX IF NOT EXISTS idx_casos_ciudad ON casos(ciudad);
-CREATE INDEX IF NOT EXISTS idx_casos_es_sintetico ON casos(es_sintetico);
+CREATE INDEX IF NOT EXISTS idx_cases_usuario_id ON cases(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_cases_recomendacion ON cases(recomendacion_agente);
+CREATE INDEX IF NOT EXISTS idx_cases_ciudad ON cases(ciudad);
+CREATE INDEX IF NOT EXISTS idx_cases_es_sintetico ON cases(es_sintetico);

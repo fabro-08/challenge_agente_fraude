@@ -85,12 +85,29 @@ class TestAnalyze:
         resp = client.post("/analyze", json={"case_id": "COMP-0009"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["final_decision"] in ("APROBAR", "RECHAZAR", "ESCALAR")
+        assert data["final_decision"] == "RECHAZAR"
         assert "COMP-0009" in data["case_id"]
+        assert data["fuente"] == "reglas"
+        assert data["decision_regla"] == "RECHAZAR"
+        assert data["decision_llm"] is None
+        assert data["justificacion_regla"]  # R1 — descripción de la regla
+        assert data["senales_regla"]        # campo operador umbral = valor real
         assert len(data["checklist"]) > 0
         for item in data["checklist"]:
             assert "version" in item
             assert "se_disparo" in item
+
+    def test_analyze_escalar_forzado(self, client):
+        """COMP-0002: palabras críticas → ESCALAR forzado; el LLM analiza pero
+        la decisión queda forzada a ESCALAR con fuente 'reglas'."""
+        resp = client.post("/analyze", json={"case_id": "COMP-0002"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["final_decision"] == "ESCALAR"
+        assert data["fuente"] == "reglas"
+        assert data["decision_regla"] == "ESCALAR"
+        assert data["decision_llm"] in ("APROBAR", "RECHAZAR", "ESCALAR")
+        assert data["justificacion_regla"].startswith("ESCALAR-1 —")
 
     def test_analyze_not_found(self, client):
         resp = client.post("/analyze", json={"case_id": "NO-EXISTE-999"})
@@ -163,12 +180,12 @@ class TestRules:
         assert resp.status_code == 200
         assert resp.json()["version_actual"] > 1
 
-        # Revertir a valor 2
+        # Revertir a la configuración canónica de R1 (no dejar basura)
         resp = client.put(
             "/rules/R1",
             json={
                 "config": {
-                    "descripcion": "Flags >= 2 (test revert)",
+                    "descripcion": "Usuario con 2 o más flags de fraude previos",
                     "match": "all",
                     "condiciones": [{"campo": "flags_fraude_previos", "operador": ">=", "valor": 2}],
                 },

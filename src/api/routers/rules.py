@@ -26,7 +26,7 @@ _campos_cache_ttl: float = 0.0
 
 
 def _obtener_campos() -> list[str]:
-    """Devuelve las columnas de la tabla ``casos`` (con cache simple)."""
+    """Devuelve las columnas disponibles para reglas (``cases`` ∪ ``features``)."""
     import time
     global _campos_cache, _campos_cache_ttl
     if _campos_cache is not None and time.time() - _campos_cache_ttl < 120:
@@ -37,10 +37,14 @@ def _obtener_campos() -> list[str]:
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT column_name FROM information_schema.columns
-                   WHERE table_name = 'casos' AND table_schema = 'public'
+                   WHERE table_name IN ('cases', 'features')
+                     AND table_schema = 'public'
+                     AND column_name NOT IN ('caso_id', 'created_at', 'updated_at',
+                                             'version', 'es_sintetico',
+                                             'recomendacion_agente')
                    ORDER BY column_name"""
             )
-            campos = [r["column_name"] for r in cur.fetchall()]
+            campos = sorted({r["column_name"] for r in cur.fetchall()})
     finally:
         conn.close()
 
@@ -64,7 +68,7 @@ def _validar_config(config: dict, campos_disponibles: list[str]) -> None:
         if campo not in campo_set:
             raise HTTPException(
                 422,
-                f"Campo '{campo}' no existe en la tabla casos. "
+                f"Campo '{campo}' no existe. "
                 f"Disponibles: {', '.join(sorted(campo_set))}",
             )
         if operador not in OPERADORES_VALIDOS:

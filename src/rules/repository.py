@@ -1,11 +1,13 @@
-"""Repositorio de reglas: acceso a configuración, versiones y resultados en DB.
+"""Repositorio de reglas: acceso a configuración y versiones en DB.
 
 Centraliza todo el SQL relacionado con el motor de reglas genérico:
 - ``cargar_reglas_activas()`` → definiciones para el ``GenericRuleEngine``
-- ``persistir_resultados()`` → checklist por caso (``resultados_reglas``)
+- ``enriquecer_checklist()`` → checklist por caso (con número de versión)
 - ``crear_regla()`` / ``actualizar_regla()`` → versionado (cada cambio = nueva versión)
 
 La conexión se abre y cierra por operación (el pipeline y la API son efímeros).
+El checklist de cada caso se consolida en ``resolution_case.reglas_checklist``
+(JSONB) desde el pipeline; no hay tabla propia de resultados.
 """
 
 import os
@@ -69,48 +71,45 @@ def cargar_reglas_activas(incluir_inactivas: bool = False) -> list[RuleDefinitio
     ]
 
 
-def persistir_resultados(caso_id: str, rule_details: list[dict]) -> int:
-    """Persiste el checklist de reglas de un caso en ``resultados_reglas``.
+def enriquecer_checklist(rule_details: list[dict]) -> list[dict]:
+    """Devuelve el checklist con el número de ``version`` resuelto por ``version_id``.
 
-    Idempotente por caso: borra resultados previos del mismo caso antes de
-    insertar (re-análisis reemplaza el checklist anterior).
+    El checklist se consolida en ``resolution_case.reglas_checklist`` (JSONB):
+    es autocontenido (regla_id, version_id, version, nombre, tipo_regla,
+    se_disparo, valor_actual, detalle) para la UI sin JOINs adicionales.
 
     Args:
-        caso_id: Identificador del caso.
-        rule_details: Lista de dicts con ``version_id``, ``se_disparo``,
-            ``valor_actual`` y ``detalle`` (un dict por regla evaluada).
+        rule_details: Lista de dicts con ``regla_id``, ``version_id``,
+            ``nombre``, ``tipo_regla``, ``se_disparo``, ``valor_actual``,
+            ``detalle`` (producida por ``apply_rules``).
 
     Returns:
-        Número de filas insertadas.
+        La misma lista enriquecida con el campo ``version``.
     """
     if not rule_details:
-        return 0
+        return []
+    vids = {r["version_id"] for r in rule_details}
+    version_por_id: dict[int, int] = {}
     conn = _conectar()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM resultados_reglas WHERE caso_id = %s", (caso_id,))
-            cur.executemany(
-                """
-                INSERT INTO resultados_reglas
-                    (caso_id, version_id, se_disparo, valor_actual, detalle)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                [
-                    (
-                        caso_id,
-                        r["version_id"],
-                        r["se_disparo"],
-                        r.get("valor_actual", ""),
-                        r.get("detalle", ""),
-                    )
-                    for r in rule_details
-                ],
-            )
-            n = cur.rowcount
-        conn.commit()
-        return n
+            for vid in vids:
+                cur.execute(
+                    "SELECT version FROM reglas_versiones WHERE version_id = %s",
+                    (vid,),
+                )
+                row = cur.fetchone()
+                if row:
+                    version_por_id[vid] = row[0]
     finally:
         conn.close()
+
+    checklist: list[dict] = []
+    for r in rule_details:
+        item = dict(r)
+        item["version"] = version_por_id.get(r["version_id"], 0)
+        checklist.append(item)
+    return checklist
 
 
 def crear_regla(

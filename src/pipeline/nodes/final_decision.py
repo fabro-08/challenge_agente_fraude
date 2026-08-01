@@ -1,84 +1,145 @@
 """Nodo final_decision: combina reglas + LLM para la decisión final.
 
-Usa una jerarquía determinista (no score continuo). La confianza se elimina;
-la decisión se basa en qué regla disparó y el veredicto del LLM.
+Usa una jerarquía determinista (no score continuo). Tres vías:
 
-Precedencia:
-1. Si RuleEngine dijo RECHAZAR → RECHAZAR
-2. Si RuleEngine dijo APROBAR → APROBAR
-3. Si hay palabras críticas → ESCALAR (seguridad de marca)
-4. LLM decide en ambiguos vía veredicto:
-   - veredicto empieza con "APROBAR" → APROBAR
-   - veredicto empieza con "RECHAZAR" → RECHAZAR
-   - veredicto empieza con "ESCALAR" o vacío → ESCALAR
+1. APROBAR/RECHAZAR por reglas → decisión fija, sin LLM.
+   - ``justificacion_regla`` = descripción de la(s) regla(s) disparada(s)
+     (formato ``R1 — <descripcion>``).
+   - ``senales_regla`` = ``campo operador umbral = valor_real``.
+2. ESCALAR forzoso (palabras críticas) → decisión FORZADA a ESCALAR; el LLM
+   participa solo para aportar análisis (``justificacion_llm``/``senales_llm``).
+3. AMBIGUO → decide el LLM vía veredicto (``decision_llm``); la justificación
+   y las señales las genera el LLM.
+
+``justification`` (estado) es la justificación principal derivada para la API
+(``justificacion_llm`` si el LLM participó, si no ``justificacion_regla``).
 """
 
 from src.pipeline.state import CaseState
+
+PREFIJOS = ("APROBAR", "RECHAZAR", "ESCALAR")
+
+_TIPO_POR_DECISION = {
+    "APROBAR": "APROBAR",
+    "RECHAZAR": "RECHAZAR",
+    "ESCALAR": "ESCALAR_FORZOSO",
+}
+
+
+def _sin_prefijo(texto: str) -> str:
+    """Quita el prefijo "APROBAR:" / "RECHAZAR:" / "ESCALAR:" de un texto."""
+    t = (texto or "").strip()
+    for p in PREFIJOS:
+        if t.upper().startswith(p + ":"):
+            return t[len(p) + 1:].strip()
+    return t
+
+
+def _justificacion_reglas(rule_details: list[dict], decision: str) -> str:
+    """Justificación de reglas: ``regla_id — descripcion`` de las disparadas.
+
+    Args:
+        rule_details: Checklist por regla con ``regla_id``, ``descripcion``,
+            ``tipo_regla`` y ``se_disparo``.
+        decision: Decisión que resuelve (APROBAR/RECHAZAR/ESCALAR).
+
+    Returns:
+        Texto con la descripción de las reglas que dispararon la decisión.
+    """
+    tipo = _TIPO_POR_DECISION.get(decision)
+    disparadas = [
+        r for r in (rule_details or [])
+        if r.get("se_disparo") and r.get("tipo_regla") == tipo
+    ]
+    if not disparadas:
+        disparadas = [r for r in (rule_details or []) if r.get("se_disparo")]
+    if not disparadas:
+        return ""
+
+    partes = []
+    for r in disparadas:
+        desc = r.get("descripcion") or r.get("nombre", "")
+        partes.append(f"{r.get('regla_id', '?')} — {desc}" if desc else r.get("regla_id", "?"))
+    return "; ".join(partes)
+
+
+def _llm_justificacion(llm: dict) -> str | None:
+    """Justificación del LLM, sin prefijo de decisión (o None si no aplica)."""
+    if not llm:
+        return None
+    veredicto = (llm.get("veredicto") or "").strip()
+    just = _sin_prefijo(llm.get("justificacion", "")) or _sin_prefijo(veredicto)
+    return just or None
+
+
+def _llm_senales(llm: dict) -> list[str]:
+    """Señales canónicas generadas por el LLM (snake_case)."""
+    if not llm:
+        return []
+    return [
+        s.get("señal", "") for s in llm.get("señales_explicadas", [])
+        if isinstance(s, dict) and s.get("señal")
+    ]
 
 
 def final_decision(state: CaseState) -> CaseState:
     """Emite la decisión final combinando reglas y LLM.
 
     Args:
-        state: Estado con ``rule_result``, ``llm_analysis``, ``rule_signals``,
-            ``rule_disparada`` (nombre de la regla que disparó).
+        state: Estado con ``rule_result``, ``decision_regla``,
+            ``decision_llm``, ``senales_regla`` y ``llm_analysis``.
 
     Returns:
-        Estado actualizado con ``final_decision``, ``justification``, ``signals``.
+        Estado actualizado con ``final_decision``, ``justificacion_regla``,
+        ``justificacion_llm``, ``senales_regla`` y ``senales_llm``.
     """
     rule_result = state.get("rule_result")
-    rule_signals = state.get("rule_signals", [])
-    rule_disparada = state.get("rule_disparada", "")
+    decision_regla = state.get("decision_regla", "AMBIGUO")
+    senales_regla = [s for s in state.get("senales_regla", []) if s and s.strip()]
     llm = state.get("llm_analysis") or {}
-    llm_signals = llm.get("señales", [])
-    veredicto = (llm.get("veredicto") or "").strip()
-    llm_just = llm.get("justificacion", "")
 
-    todas_senales = list(rule_signals) + llm_signals
-
-    # 1. RECHAZAR por reglas
-    if rule_result == "RECHAZAR":
-        state["final_decision"] = "RECHAZAR"
-        state["justification"] = (
-            f"RECHAZAR por señales de fraude detectadas por reglas: "
-            f"{'; '.join(rule_signals)}."
+    # 1. APROBAR / RECHAZAR por reglas (sin LLM)
+    if rule_result in ("APROBAR", "RECHAZAR"):
+        state["final_decision"] = rule_result
+        state["decision_regla"] = decision_regla
+        state["decision_llm"] = None
+        state["justificacion_regla"] = _justificacion_reglas(
+            state.get("rule_details", []), rule_result
         )
-        state["signals"] = todas_senales
+        state["justificacion_llm"] = None
+        state["senales_regla"] = senales_regla
+        state["senales_llm"] = []
+        state["justification"] = state["justificacion_regla"]
         return state
 
-    # 2. APROBAR por reglas
-    if rule_result == "APROBAR":
-        state["final_decision"] = "APROBAR"
-        state["justification"] = (
-            f"APROBAR: caso consistente con perfil legítimo. "
-            f"Señales: {'; '.join(rule_signals)}."
-        )
-        state["signals"] = todas_senales
-        return state
-
-    # 3. Palabras críticas → siempre ESCALAR
-    if any("palabras_criticas" in s or "seguridad de marca" in s for s in rule_signals):
+    # 2. ESCALAR forzoso (palabras críticas): decisión forzada a ESCALAR;
+    #    el LLM aporta justificación y señales enriquecidas.
+    if rule_result == "ESCALAR":
         state["final_decision"] = "ESCALAR"
-        state["justification"] = (
-            "ESCALAR por seguridad de marca: el reclamo contiene "
-            "palabras críticas que requieren revisión humana."
+        state["decision_regla"] = "ESCALAR"
+        state["justificacion_regla"] = _justificacion_reglas(
+            state.get("rule_details", []), "ESCALAR"
         )
-        state["signals"] = todas_senales
+        state["justificacion_llm"] = _llm_justificacion(llm)
+        state["senales_regla"] = senales_regla
+        state["senales_llm"] = _llm_senales(llm)
+        state["justification"] = (
+            state["justificacion_llm"] or state["justificacion_regla"]
+        )
         return state
 
-    # 4. LLM decide en ambiguos vía veredicto
-    veredicto_upper = veredicto.upper()
-    if veredicto_upper.startswith("RECHAZAR"):
-        state["final_decision"] = "RECHAZAR"
-        state["justification"] = f"RECHAZAR por análisis LLM: {llm_just}"
-    elif veredicto_upper.startswith("APROBAR"):
-        state["final_decision"] = "APROBAR"
-        state["justification"] = f"APROBAR por análisis LLM: {llm_just}"
-    else:
-        state["final_decision"] = "ESCALAR"
-        state["justification"] = (
-            f"ESCALAR: caso ambiguo. LLM: {veredicto or llm_just}"
-        )
+    # 3. AMBIGUO → decide el LLM vía veredicto
+    decision_llm = state.get("decision_llm") or "ESCALAR"
+    state["decision_llm"] = decision_llm
+    state["final_decision"] = decision_llm
+    state["justificacion_regla"] = ""
+    state["justificacion_llm"] = _llm_justificacion(llm)
+    state["senales_regla"] = []
+    state["senales_llm"] = _llm_senales(llm)
+    state["justification"] = state["justificacion_llm"] or (
+        "Revisión manual requerida por ambigüedad en la evidencia."
+    )
 
-    state["signals"] = todas_senales
+    # decision_regla ya fue seteado por apply_rules; se asegura por defecto.
+    state["decision_regla"] = decision_regla
     return state

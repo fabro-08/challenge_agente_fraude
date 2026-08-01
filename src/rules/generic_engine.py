@@ -20,9 +20,9 @@ Operadores soportados:
     ``in``, ``not_in``                            — pertenencia a lista
     ``contains_any``, ``contains_all``            — subtexto (case-insensitive)
 
-Los ``campo`` válidos son cualquier columna de la tabla ``casos`` (originales +
-features derivadas). Si el campo no existe o es NULL en el caso, la condición
-evalúa a False (safe default).
+Los ``campo`` válidos son cualquier columna de ``cases`` (datos crudos) o
+``features`` (features derivadas). Si el campo no existe o es NULL en el caso,
+la condición evalúa a False (safe default).
 
 Precedencia de decisión (idéntica al motor original):
     1. ESCALAR_FORZOSO: cualquiera que dispare → ESCALAR
@@ -89,6 +89,7 @@ class RuleResult:
     se_disparo: bool
     detalle: str
     valor_actual: str
+    descripcion: str = ""
     condiciones: list[ConditionResult] = field(default_factory=list)
 
 
@@ -152,7 +153,7 @@ def evaluar_condicion(condicion: dict[str, Any], row: dict[str, Any]) -> Conditi
 
     Args:
         condicion: Dict con ``campo``, ``operador`` y ``valor``.
-        row: Diccionario del caso (columnas de la tabla ``casos``).
+        row: Diccionario del caso (columnas de ``cases`` + ``features``).
 
     Returns:
         ConditionResult con el valor encontrado y si se cumplió.
@@ -225,6 +226,7 @@ class GenericRuleEngine:
             se_disparo=se_disparo,
             detalle=detalle,
             valor_actual=valor_actual,
+            descripcion=regla.descripcion,
             condiciones=resultados,
         )
 

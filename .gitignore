@@ -26,3 +26,6 @@ pgdata/
 .opencode/
 feature_list.json
 opencode.json
+
+# Logs transitorios del agente
+log_review/*.log

@@ -38,18 +38,23 @@ QUERY = """
            c.entrega_confirmada_gps,
            c.tiempo_entrega_real_min,
            c.flags_fraude_previos,
-           c.motivo_reclamo,
-           c.descripcion_reclamo,
-           c.comp_ratio,
-           c.freq_densidad,
-           c.score_riesgo_previo,
-           a.fuente,
-           a.decision            AS recomendacion,
-           a.justificacion,
-           a.senales_usadas,
-           a.llm_resultado
-    FROM casos c
-    LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id
+            c.motivo_reclamo,
+            c.descripcion_reclamo,
+            f.comp_ratio,
+            f.freq_densidad,
+            f.score_riesgo_previo,
+            a.fuente,
+            a.decision            AS recomendacion,
+            a.decision_regla,
+            a.decision_llm,
+            a.justificacion_llm,
+            a.justificacion_regla,
+            a.senales_llm,
+            a.senales_regla,
+            a.llm_resultado
+    FROM cases c
+    LEFT JOIN features f ON f.caso_id = c.caso_id
+    LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
     WHERE c.es_sintetico = FALSE
     ORDER BY c.caso_id
 """

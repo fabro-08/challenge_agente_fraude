@@ -172,7 +172,7 @@ def _reglas_table(rules: list[dict]) -> str | None:
 
     event = st.dataframe(
         df_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -341,7 +341,7 @@ def _mostrar_simulacion(result: dict) -> None:
     if afectados:
         st.subheader("Casos afectados")
         df_af = pd.DataFrame(afectados)
-        st.dataframe(df_af, use_container_width=True, hide_index=True)
+        st.dataframe(df_af, width="stretch", hide_index=True)
 
 
 def _tab_reglas_activas() -> None:
@@ -512,7 +512,7 @@ def _tab_historial() -> None:
         df_vers = pd.DataFrame(versions)
         cols = ["version_id", "version", "cambio_descripcion", "updated_by", "updated_at"]
         df_display = df_vers[cols].copy()
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        st.dataframe(df_display, width="stretch", hide_index=True)
 
         for idx, row in df_vers.iterrows():
             with st.expander(f"Versión {row.get('version', '?')} — {row.get('cambio_descripcion', 'sin descripción')}"):

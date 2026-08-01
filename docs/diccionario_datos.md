@@ -84,25 +84,32 @@ flags (5): 0, 1, 2, 3, 4
 
 ## 3. Salidas del pipeline (steps 06–07)
 
-La decisión vive en `analisis_casos` (separada de los datos crudos de `casos`).
+La decisión vive en `resolution_case` (separada de los datos crudos de `cases`),
+con el contrato separado por origen (reglas vs LLM).
 
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `decision` | VARCHAR(20) | Decisión final: **APROBAR**, **RECHAZAR** o **ESCALAR** |
-| `fuente` | VARCHAR(10) | `reglas` (heurística determinista) o `llm` (caso ambiguo analizado por el LLM) |
-| `justificacion` | TEXT | Explicación textual de la decisión |
-| `senales_usadas` | TEXT | Señales que dispararon, separadas por `\|` |
+| `fuente` | VARCHAR(10) | `reglas` (heurística determinista) o `llm` (caso ambiguo analizado por el LLM). ESCALAR forzoso queda en `reglas` |
+| `decision_regla` | VARCHAR(10) | Resultado del motor de reglas: APROBAR, RECHAZAR, AMBIGUO o ESCALAR |
+| `decision_llm` | VARCHAR(10) | Veredicto discreto del LLM (solo casos que pasan por LLM) |
+| `justificacion_regla` | TEXT | Descripción de la(s) regla(s) que dispararon (`R1 — Usuario con 2 o más flags de fraude previos`) |
+| `justificacion_llm` | TEXT | Justificación del LLM sin prefijo de decisión |
+| `senales_regla` | TEXT | Señales de reglas `campo operador umbral = valor real`, separadas por `\|` |
+| `senales_llm` | TEXT | Señales canónicas del LLM (snake_case), separadas por `\|` |
+| `reglas_checklist` | JSONB | Checklist por regla: `{regla_id, version, nombre, tipo_regla, se_disparo, detalle, condiciones}` |
 | `llm_resultado` | JSONB | Análisis del LLM: `{resumen, veredicto, señales_explicadas[{señal, explicacion, peso}]}` |
 
 ### Distribución de decisiones (250 casos: 150 originales + 100 sintéticos)
 
 | Decisión | Casos | % |
 |---|---|---|
-| ESCALAR | 132 | 52.8% |
-| RECHAZAR | 83 | 33.2% |
-| APROBAR | 35 | 14.0% |
+| APROBAR | 105 | 42.0% |
+| RECHAZAR | 100 | 40.0% |
+| ESCALAR | 45 | 18.0% |
 
-Sobre los **150 casos originales**: ESCALAR 79 · RECHAZAR 50 · APROBAR 21.
+Sobre los **150 casos originales**: APROBAR 65 · RECHAZAR 58 · ESCALAR 27
+(`data/150casos_analizados.xlsx`).
 
 ---
 

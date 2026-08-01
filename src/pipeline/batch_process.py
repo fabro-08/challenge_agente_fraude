@@ -1,8 +1,9 @@
 """Ejecuta el pipeline LangGraph sobre todos los casos de la DB.
 
 Procesa los 150 originales + 100 sintéticos y persiste la decisión final
-en PostgreSQL (tabla analisis_casos: decision, justificacion, senales_usadas,
-llm_resultado).
+en PostgreSQL (tabla resolution_case: decision, decision_regla,
+decision_llm, reglas_checklist, justificacion_llm, justificacion_regla,
+senales_llm, senales_regla, llm_resultado).
 
 El grafo es asíncrono (nodo LLM ``async``); el batch corre dentro de un event
 loop propio vía ``asyncio.run``. Para una corrida de backfill, la ejecución
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import psycopg2
 
 from src.pipeline.graph import build_graph
+from src.utils.jsonb import jsonb
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -43,45 +45,63 @@ def obtener_casos() -> list[str]:
     conn = psycopg2.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT caso_id FROM casos ORDER BY caso_id")
+            cur.execute("SELECT caso_id FROM cases ORDER BY caso_id")
             return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
 
 def actualizar_caso(caso_id: str, resultado: dict) -> None:
-    """Persiste la decisión del pipeline en la tabla analisis_casos.
+    """Persiste la decisión del pipeline en la tabla resolution_case.
 
     Args:
         caso_id: ID del caso a actualizar.
-        resultado: Dict con final_decision, justification, signals.
+        resultado: Dict con final_decision, decision_regla, justificaciones y
+            señales separadas (regla/LLM).
     """
-    import psycopg2.extras
-    fuente = "llm" if resultado.get("llm_resultado") else "reglas"
-    llm_res = resultado.get("llm_resultado") if fuente == "llm" else None
+    decision_regla = resultado.get("decision_regla")
+    llm_res = resultado.get("llm_resultado")
+    # ESCALAR forzado por reglas: la decisión es de las reglas aunque el LLM
+    # haya generado análisis enriquecido (justificación/señales).
+    fuente = "reglas" if decision_regla == "ESCALAR" else ("llm" if llm_res else "reglas")
+    features_version = resultado.get("features_version", "v1")
 
     conn = psycopg2.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO analisis_casos
-                       (caso_id, fuente, decision, justificacion, senales_usadas,
-                        llm_resultado)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                """INSERT INTO resolution_case
+                       (caso_id, features_version, fuente, decision,
+                        decision_regla, reglas_checklist,
+                        decision_llm, justificacion_llm, justificacion_regla,
+                        senales_llm, senales_regla, llm_resultado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (caso_id) DO UPDATE SET
-                        fuente          = EXCLUDED.fuente,
-                        decision        = EXCLUDED.decision,
-                        justificacion   = EXCLUDED.justificacion,
-                        senales_usadas  = EXCLUDED.senales_usadas,
-                        llm_resultado   = EXCLUDED.llm_resultado,
-                        updated_at      = NOW()""",
+                        features_version   = EXCLUDED.features_version,
+                        fuente             = EXCLUDED.fuente,
+                        decision           = EXCLUDED.decision,
+                        decision_regla     = EXCLUDED.decision_regla,
+                        reglas_checklist   = EXCLUDED.reglas_checklist,
+                        decision_llm       = EXCLUDED.decision_llm,
+                        justificacion_llm  = EXCLUDED.justificacion_llm,
+                        justificacion_regla = EXCLUDED.justificacion_regla,
+                        senales_llm        = EXCLUDED.senales_llm,
+                        senales_regla      = EXCLUDED.senales_regla,
+                        llm_resultado      = EXCLUDED.llm_resultado,
+                        updated_at         = NOW()""",
                 (
                     caso_id,
+                    features_version,
                     fuente,
                     resultado["final_decision"],
-                    resultado["justification"],
-                    " | ".join(resultado["signals"]),
-                    psycopg2.extras.Json(llm_res) if llm_res else None,
+                    resultado.get("decision_regla", "AMBIGUO"),
+                    jsonb(resultado.get("reglas_checklist") or []),
+                    resultado.get("decision_llm"),
+                    resultado.get("justificacion_llm"),
+                    resultado.get("justificacion_regla") or None,
+                    " | ".join(resultado.get("senales_llm") or []),
+                    " | ".join(resultado.get("senales_regla") or []),
+                    jsonb(llm_res),
                 ),
             )
         conn.commit()

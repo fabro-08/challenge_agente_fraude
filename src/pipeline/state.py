@@ -9,31 +9,55 @@ class CaseState(TypedDict, total=False):
     Attributes:
         case_id: Identificador único del caso.
         raw_data: Datos crudos del caso (de PostgreSQL o entrada directa).
-        features: Features calculadas por FeatureEngineer.
-        rule_result: Resultado de RuleEngine (APROBAR / RECHAZAR / None si ambiguo).
-        rule_signals: Señales que disparó RuleEngine.
-        rule_details: Checklist completo por regla (version_id, se_disparo, detalle)
-            para persistir en ``resultados_reglas`` y mostrar en la UI.
+        features: Features calculadas por FeatureEngineer (raw + features).
+        features_version: Versión del feature set usada (``features.version``).
+        rule_result: Resultado del motor de reglas para el routing del grafo:
+            APROBAR / RECHAZAR resuelven sin LLM; ESCALAR (forzoso) y None
+            (ambiguo) pasan al nodo LLM.
+        decision_regla: Resultado crudo del motor de reglas
+            (APROBAR / RECHAZAR / AMBIGUO / ESCALAR).
+        decision_llm: Veredicto discreto del LLM
+            (APROBAR / RECHAZAR / ESCALAR). None si no se ejecutó LLM.
+        rule_details: Checklist completo por regla (regla_id, version_id,
+            nombre, tipo_regla, se_disparo, descripcion, condiciones,
+            valor_actual, detalle).
+        reglas_checklist: Checklist enriquecido (con ``version``) para
+            persistir en ``resolution_case.reglas_checklist`` (JSONB).
+        justificacion_regla: Descripción de la(s) regla(s) disparada(s) en
+            formato ``R1 — <descripcion>``. Vacío si no aplica.
+        justificacion_llm: Justificación generada por el LLM. None si el LLM
+            no participó.
+        senales_regla: Señales de las reglas disparadas en formato
+            ``campo operador umbral = valor_real`` (ej. ``flags >= 2 = 3``).
+        senales_llm: Señales canónicas (snake_case) generadas por el LLM.
         llm_analysis: Resultado crudo del LLM — dict con justificacion, resumen,
-            veredicto y señales_explicadas. None si no se ejecutó (caso resuelto por reglas).
+            veredicto y señales_explicadas. None si no se ejecutó (caso
+            resuelto por reglas).
         llm_resultado: Estructura legible para el agente CS: resumen, veredicto
             y señales_explicadas con peso. None si no se ejecutó LLM.
-        llm_analysis: Análisis del LLM sobre descripcion_reclamo (None si no aplica).
         final_decision: Decisión final (APROBAR / RECHAZAR / ESCALAR).
-        justification: Justificación legible para humanos.
-        signals: Todas las señales usadas en la decisión.
+            Para ESCALAR forzoso queda forzada a ESCALAR aunque el LLM
+            participe aportando análisis.
+        justification: Justificación principal legible (``justificacion_llm``
+            si el LLM participó, si no ``justificacion_regla``).
         es_sintetico: Si el caso es sintético.
     """
 
     case_id: str
     raw_data: dict[str, Any]
     features: dict[str, Any]
+    features_version: str
     rule_result: str | None
-    rule_signals: list[str]
+    decision_regla: str | None
+    decision_llm: str | None
     rule_details: list[dict[str, Any]]
+    reglas_checklist: list[dict[str, Any]]
+    justificacion_regla: str
+    justificacion_llm: str | None
+    senales_regla: list[str]
+    senales_llm: list[str]
     llm_analysis: dict[str, Any] | None
     llm_resultado: dict[str, Any] | None
     final_decision: str
     justification: str
-    signals: list[str]
     es_sintetico: bool

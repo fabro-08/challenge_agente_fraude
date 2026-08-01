@@ -15,11 +15,31 @@ def _load_stats() -> dict | None:
 
 @st.cache_data(ttl=30)
 def _load_all_cases() -> pd.DataFrame:
-    """Carga todos los casos para construir gráficos agregados."""
-    data = get_cases(limit=250)
-    if data is None or not data.get("casos"):
+    """Carga todos los casos para construir gráficos agregados.
+
+    El API pagina en bloques de 200; itera con offset hasta cubrir el total.
+    """
+    frames: list[pd.DataFrame] = []
+    offset = 0
+    total: int | None = None
+
+    while True:
+        data = get_cases(limit=200, offset=offset)
+        if data is None:
+            break
+        if total is None:
+            total = data.get("total", 0)
+        casos = data.get("casos", [])
+        if not casos:
+            break
+        frames.append(pd.DataFrame(casos))
+        offset += len(casos)
+        if offset >= (total or 0):
+            break
+
+    if not frames:
         return pd.DataFrame()
-    return pd.DataFrame(data["casos"])
+    return pd.concat(frames, ignore_index=True)
 
 
 ANTIGUEDAD_BUCKETS = {"< 30 días": (0, 30), "30–90 días": (30, 90), "90–365 días": (90, 365), "> 365 días": (365, 99999)}
@@ -102,7 +122,7 @@ def render_dashboard() -> None:
         df_recent = df_all.sort_values("caso_id", ascending=False).head(10)
         cols_show = ["caso_id", "ciudad", "vertical", "recomendacion_agente", "flags_fraude_previos"]
         cols_show = [c for c in cols_show if c in df_recent.columns]
-        st.dataframe(df_recent[cols_show], use_container_width=True, hide_index=True)
+        st.dataframe(df_recent[cols_show], width="stretch", hide_index=True)
 
     # ── Origen ─────────────────────────────────────────────────────────
     with st.expander("Desglose por origen (original vs sintético)", expanded=False):
@@ -111,7 +131,7 @@ def render_dashboard() -> None:
         if filtrados:
             df_orig = pd.DataFrame(filtrados)
             pivot = df_orig.pivot_table(index="es_sintetico", columns="recomendacion", values="n", fill_value=0, aggfunc="sum")
-            st.dataframe(pivot, use_container_width=True)
+            st.dataframe(pivot, width="stretch")
 
     # ── Reglas activas ─────────────────────────────────────────────────
     st.metric("Reglas activas", reglas_activas)

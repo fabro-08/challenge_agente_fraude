@@ -4,17 +4,23 @@ Flujo:
 
     load_case → compute_features → apply_rules
                                         │
-                            ┌───────────┼───────────┐
-                            ▼           ▼           ▼
-                        RECHAZAR    APROBAR     ambiguo
-                            │           │           │
-                            ▼           ▼     llm_classify
-                       final_decision   │           │
-                            │           │     final_decision
-                            ▼           ▼           │
+                            ┌───────────┴───────────┐
+                            ▼                       ▼
+                   APROBAR / RECHAZAR      ESCALAR forzoso / ambiguo
+                            │                       │
+                            ▼                  llm_classify
+                       final_decision               │
+                            │                       ▼
+                            │                 final_decision
+                            ▼                       │
                        generate_output ◄────────────┘
                             │
                            END
+
+Nota: el ESCALAR forzoso (palabras críticas de seguridad) también pasa por el
+LLM, pero su decisión final queda forzada a ESCALAR; el LLM solo genera el
+análisis (justificación + señales). Los casos APROBAR/RECHAZAR por reglas no
+usan LLM.
 """
 
 from langgraph.graph import END, StateGraph
@@ -36,6 +42,12 @@ def _route_after_rules(state: CaseState) -> str:
 
     Returns:
         Nombre del siguiente nodo: 'final_decision' o 'llm_classify'.
+
+    Nota:
+        Solo APROBAR/RECHAZAR por reglas resuelven sin LLM. El ESCALAR forzoso
+        (palabras críticas) y el caso ambiguo pasan al LLM; en el ESCALAR
+        forzoso la decisión final queda forzada a ESCALAR y el LLM solo aporta
+        el análisis (justificación + señales).
     """
     if state.get("rule_result") in ("APROBAR", "RECHAZAR"):
         return "final_decision"

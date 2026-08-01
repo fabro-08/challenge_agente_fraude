@@ -6,12 +6,19 @@ Reglas de Decisión y Políticas. Sin entradas extra en el sidebar.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import streamlit as st
 
 st.set_page_config(
     layout="wide",
     page_title="Rappi — Revisión de Compensaciones",
-    page_icon="🛵",
+    page_icon=":material/delivery_dining:",
 )
 
 # ── CSS ────────────────────────────────────────────────────────────────
@@ -20,10 +27,6 @@ st.markdown(
 <style>
     body { font-family: 'Inter', sans-serif; }
     .stApp { font-family: 'Inter', sans-serif; }
-
-    section[data-testid="stSidebar"] {
-        background-color: #1e1e1e;
-    }
 
     .badge-APROBAR, .badge-RECHAZAR, .badge-ESCALAR, .badge-PENDIENTE {
         display: inline-block;
@@ -56,10 +59,10 @@ with st.sidebar:
     st.caption("Fraude & Compensaciones CX")
 
 # ── Navegación nativa (sin "app", sin selectbox) ──────────────────────
-dashboard = st.Page("pages/dashboard.py", title="Dashboard", icon="📊")
-cases = st.Page("pages/cases.py", title="Explorar Casos", icon="🔍")
-rules = st.Page("pages/rules.py", title="Reglas de Decisión", icon="⚙️")
-policies = st.Page("pages/policies.py", title="Políticas", icon="📋")
+dashboard = st.Page("views/dashboard.py", title="Dashboard", icon=":material/dashboard:")
+cases = st.Page("views/cases.py", title="Explorar Casos", icon=":material/search:")
+rules = st.Page("views/rules.py", title="Reglas de Decisión", icon=":material/tune:")
+policies = st.Page("views/policies.py", title="Políticas", icon=":material/policy:")
 
 pg = st.navigation([dashboard, cases, rules, policies])
 pg.run()

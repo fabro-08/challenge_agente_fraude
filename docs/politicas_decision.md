@@ -160,19 +160,36 @@ no excede el valor de la orden, y el usuario tiene historial.
 
 ## 4. ESCALAR por ambigüedad
 
-**Condición:** ninguna regla de RECHAZAR ni de APROBAR se activó.
+**Condición:** ninguna regla de RECHAZAR ni de APROBAR se activó
+(`decision_regla = AMBIGUO`).
 
 **Justificación:** el caso tiene señales mixtas o ninguna señal clara.
 No forzamos una decisión binaria donde los datos no son concluyentes.
 El pipeline pasa estos casos al **nodo LLM** (LangGraph) que analiza la
-`descripcion_reclamo`. Si el LLM tampoco encuentra señales claras, el
-caso queda ESCALADO.
+`descripcion_reclamo` y emite un veredicto (`decision_llm`). Si el LLM tampoco
+encuentra señales claras, el caso queda ESCALADO.
 
-**Señal:** `ambiguo: requiere análisis LLM` en `senales_usadas`.
+**Señal:** las reglas no aportan señales (`senales_regla` vacía); el LLM genera
+`senales_llm` con su vocabulario canónico.
 
 ---
 
-## 5. Anexo: fuentes de los thresholds
+## 5. ESCALAR forzoso (seguridad de marca)
+
+**Condición:** la regla `ESCALAR-1` detecta palabras críticas (alergia,
+intoxicación, policía, sangre, abogado, demanda, hospital, ...).
+
+**Justificación:** riesgo legal/de salud: la decisión queda **forzada a ESCALAR**
+(`decision_regla = ESCALAR`, `fuente = reglas`) sin importar lo que opine el LLM.
+El LLM participa solo para aportar análisis enriquecido
+(`justificacion_llm`/`senales_llm`), nunca para re-evaluar la decisión
+(nota "PRE-MARCADO" en el prompt del nodo `llm_classify`).
+
+**Señal:** `descripcion_reclamo contains_any [alergi, intoxic, ...] = <palabra>`.
+
+---
+
+## 6. Anexo: fuentes de los thresholds
 
 | Threshold | Valor | Fuente |
 |---|---|---|
@@ -185,8 +202,9 @@ caso queda ESCALADO.
 
 ---
 
-## 6. Cambios y versiones
+## 7. Cambios y versiones
 
 | Versión | Fecha | Cambios |
 |---|---|---|
 | 1.0 | 2026-07-28 | Políticas iniciales basadas en EDA de 150 casos |
+| 1.1 | 2026-08-01 | Output separado por origen: `decision_regla`/`decision_llm`, justificaciones y señales de reglas (`campo operador umbral = valor real`); ESCALAR forzoso pasa por LLM pero con decisión forzada a ESCALAR (`fuente=reglas`); AMBIGUO lo decide el LLM |

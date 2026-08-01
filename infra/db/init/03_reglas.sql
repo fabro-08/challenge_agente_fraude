@@ -33,20 +33,8 @@ CREATE TABLE IF NOT EXISTS reglas_versiones (
 
 CREATE INDEX IF NOT EXISTS idx_reglas_versiones_regla ON reglas_versiones(regla_id);
 
--- ── Resultados por caso × regla (checklist para la UI) ───────────────
-
-CREATE TABLE IF NOT EXISTS resultados_reglas (
-    id           SERIAL PRIMARY KEY,
-    caso_id      VARCHAR(20) NOT NULL REFERENCES casos(caso_id),
-    version_id   INTEGER     NOT NULL REFERENCES reglas_versiones(version_id),
-    se_disparo   BOOLEAN     NOT NULL,
-    valor_actual TEXT,                        -- valor del campo en el caso evaluado
-    detalle      TEXT,                        -- explicación legible para el agente CS
-    created_at   TIMESTAMP   NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_resultados_reglas_caso ON resultados_reglas(caso_id);
-CREATE INDEX IF NOT EXISTS idx_resultados_reglas_version ON resultados_reglas(version_id);
+-- El checklist por caso se consolida en `resolution_case.reglas_checklist`
+-- (JSONB) desde el step 05; no existe tabla propia de resultados.
 
 -- ── Analistas de fraude (selector en UI al editar reglas) ────────────
 

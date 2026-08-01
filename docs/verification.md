@@ -80,8 +80,11 @@ python -c "from src.pipeline.graph import build_graph; print('import ok')"
 ```
 
 - [ ] El grafo compila sin errores
-- [ ] `graph.invoke(case)` retorna: decision, justification, signals, checklist de reglas
-- [ ] Caso ambiguo → ESCALAR (no fuerza decisión binaria)
+- [ ] `graph.invoke(case)` retorna: `final_decision`, `decision_regla`/`decision_llm`, `justificacion_regla`/`justificacion_llm`, `senales_regla`/`senales_llm` y checklist de reglas
+- [ ] APROBAR/RECHAZAR por reglas NO llaman al LLM; ESCALAR forzado y AMBIGUO sí
+- [ ] ESCALAR forzoso (palabras críticas) → `final_decision=ESCALAR` forzado, `decision_regla=ESCALAR`, el LLM solo aporta análisis
+- [ ] Señales de reglas con formato `campo operador umbral = valor real` (ej. `flags_fraude_previos >= 2 = 3`)
+- [ ] Caso ambiguo → decide el LLM vía `decision_llm` (no fuerza decisión binaria)
 - [ ] Tests: `pytest tests/test_pipeline.py`
 
 ### Step 06b — Motor genérico de reglas
@@ -91,10 +94,10 @@ python -m src.rules.seed_reglas
 pytest tests/test_generic_engine.py -v
 ```
 
-- [ ] 4 tablas creadas: `configuracion_reglas`, `reglas_versiones`, `resultados_reglas`, `usuarios_fraude`
+- [ ] 3 tablas creadas: `configuracion_reglas`, `reglas_versiones`, `usuarios_fraude` (el checklist por regla se consolida en `resolution_case.reglas_checklist`)
 - [ ] Seed inserta 11 reglas v1 (R1-R7, A1-A3, ESCALAR-1) — idempotente
 - [ ] Paridad: motor genérico decide igual que `RuleEngine` sobre los 250 casos
-- [ ] `graph.invoke(case)` persiste checklist en `resultados_reglas` con `version_id`
+- [ ] `graph.invoke(case)` consolida el checklist en `resolution_case.reglas_checklist` (JSONB) con `version_id` y `version`
 - [ ] Actualizar una regla crea nueva versión (historial en `reglas_versiones`)
 - [ ] Simulador devuelve transiciones sin escribir en DB
 - [ ] Tests: `pytest tests/test_generic_engine.py` (incluye mark `integration`)

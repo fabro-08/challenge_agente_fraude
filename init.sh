@@ -136,12 +136,12 @@ else
             EXIT_CODE=1
         fi
 
-        # Tabla casos existe
-        if docker exec "$DB_CONTAINER" psql -U rappi -d rappi_cases -c "\dt casos" 2>/dev/null | grep -q "casos"; then
-            CASES_COUNT=$(docker exec "$DB_CONTAINER" psql -U rappi -d rappi_cases -tAc "SELECT COUNT(*) FROM casos;" 2>/dev/null || echo "0")
-            ok "Tabla 'casos' existe con $CASES_COUNT registros"
+        # Tabla cases existe
+        if docker exec "$DB_CONTAINER" psql -U rappi -d rappi_cases -c "\dt cases" 2>/dev/null | grep -q "cases"; then
+            CASES_COUNT=$(docker exec "$DB_CONTAINER" psql -U rappi -d rappi_cases -tAc "SELECT COUNT(*) FROM cases;" 2>/dev/null || echo "0")
+            ok "Tabla 'cases' existe con $CASES_COUNT registros"
         else
-            skip "Tabla 'casos' no existe aún (seed pendiente, step 04)"
+            skip "Tabla 'cases' no existe aún (seed pendiente, step 04)"
         fi
     fi
 fi

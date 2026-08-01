@@ -13,6 +13,7 @@ sys.path.insert(0, "/Users/fabro/Developer/Challenge/Rappi/case3_project")
 import psycopg2
 
 from src.pipeline.graph import build_graph
+from src.utils.jsonb import jsonb
 
 DB_CONFIG = {
     "host": "localhost",
@@ -26,14 +27,14 @@ CHUNK_SIZE = 30
 
 
 def obtener_casos_pendientes() -> list[str]:
-    """Obtiene caso_ids que aún no tienen análisis en analisis_casos."""
+    """Obtiene caso_ids que aún no tienen análisis en resolution_case."""
     conn = psycopg2.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT c.caso_id FROM casos c
-                   LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id
-                   WHERE a.id IS NULL
+                """SELECT c.caso_id FROM cases c
+                   LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
+                   WHERE a.caso_id IS NULL
                    ORDER BY c.caso_id"""
             )
             return [r[0] for r in cur.fetchall()]
@@ -42,33 +43,50 @@ def obtener_casos_pendientes() -> list[str]:
 
 
 def actualizar_caso(caso_id: str, resultado: dict) -> None:
-    """Persiste la decisión en la DB (tabla analisis_casos)."""
-    import psycopg2.extras
-    fuente = "llm" if resultado.get("llm_resultado") else "reglas"
-    llm_res = resultado.get("llm_resultado") if fuente == "llm" else None
+    """Persiste la decisión en la DB (tabla resolution_case)."""
+    decision_regla = resultado.get("decision_regla")
+    llm_res = resultado.get("llm_resultado")
+    # ESCALAR forzado por reglas: la decisión es de las reglas aunque el LLM
+    # haya generado análisis enriquecido (justificación/señales).
+    fuente = "reglas" if decision_regla == "ESCALAR" else ("llm" if llm_res else "reglas")
+    features_version = resultado.get("features_version", "v1")
 
     conn = psycopg2.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO analisis_casos
-                       (caso_id, fuente, decision, justificacion, senales_usadas,
-                        llm_resultado)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                """INSERT INTO resolution_case
+                       (caso_id, features_version, fuente, decision,
+                        decision_regla, reglas_checklist,
+                        decision_llm, justificacion_llm, justificacion_regla,
+                        senales_llm, senales_regla, llm_resultado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (caso_id) DO UPDATE SET
-                        fuente          = EXCLUDED.fuente,
-                        decision        = EXCLUDED.decision,
-                        justificacion   = EXCLUDED.justificacion,
-                        senales_usadas  = EXCLUDED.senales_usadas,
-                        llm_resultado   = EXCLUDED.llm_resultado,
-                        updated_at      = NOW()""",
+                        features_version   = EXCLUDED.features_version,
+                        fuente             = EXCLUDED.fuente,
+                        decision           = EXCLUDED.decision,
+                        decision_regla     = EXCLUDED.decision_regla,
+                        reglas_checklist   = EXCLUDED.reglas_checklist,
+                        decision_llm       = EXCLUDED.decision_llm,
+                        justificacion_llm  = EXCLUDED.justificacion_llm,
+                        justificacion_regla = EXCLUDED.justificacion_regla,
+                        senales_llm        = EXCLUDED.senales_llm,
+                        senales_regla      = EXCLUDED.senales_regla,
+                        llm_resultado      = EXCLUDED.llm_resultado,
+                        updated_at         = NOW()""",
                 (
                     caso_id,
+                    features_version,
                     fuente,
                     resultado["final_decision"],
-                    resultado["justification"],
-                    " | ".join(resultado["signals"]),
-                    psycopg2.extras.Json(llm_res) if llm_res else None,
+                    resultado.get("decision_regla", "AMBIGUO"),
+                    jsonb(resultado.get("reglas_checklist") or []),
+                    resultado.get("decision_llm"),
+                    resultado.get("justificacion_llm"),
+                    resultado.get("justificacion_regla") or None,
+                    " | ".join(resultado.get("senales_llm") or []),
+                    " | ".join(resultado.get("senales_regla") or []),
+                    jsonb(llm_res),
                 ),
             )
         conn.commit()

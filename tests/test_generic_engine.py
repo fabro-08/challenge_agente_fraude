@@ -181,7 +181,12 @@ class TestParidad:
 
         conn = __import__("psycopg2").connect(**DB_CONFIG)
         try:
-            df = pd.read_sql("SELECT * FROM casos ORDER BY caso_id", conn)
+            df = pd.read_sql(
+                "SELECT c.*, f.* FROM cases c "
+                "LEFT JOIN features f ON f.caso_id = c.caso_id "
+                "ORDER BY c.caso_id",
+                conn,
+            )
         finally:
             conn.close()
 
@@ -241,14 +246,17 @@ class TestVersionado:
         assert len(versiones) >= 2
         assert versiones[0]["updated_by"] == "pytest"
 
-        # Cleanup: desactivar la regla de test
-        repository.actualizar_regla(
-            regla_id="TEST-1",
-            config=versiones[0]["config"],
-            updated_by="pytest",
-            cambio_descripcion="cleanup",
-            activo=False,
-        )
+        # Cleanup: eliminar la regla de test (no dejar basura en DB)
+        import psycopg2
+
+        conn = psycopg2.connect(**repository.DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM reglas_versiones WHERE regla_id = 'TEST-1'")
+                cur.execute("DELETE FROM configuracion_reglas WHERE regla_id = 'TEST-1'")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 # ── Simulador (integración DB) ────────────────────────────────────────
@@ -281,13 +289,14 @@ class TestSimulador:
         conn = __import__("psycopg2").connect(**DB_CONFIG)
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM resultados_reglas")
+                cur.execute("SELECT COUNT(*) FROM resolution_case WHERE reglas_checklist IS NOT NULL")
                 n_resultados = cur.fetchone()[0]
                 cur.execute("SELECT config->'condiciones'->0->>'valor' FROM reglas_versiones v JOIN configuracion_reglas c ON c.regla_id = v.regla_id AND c.version_actual = v.version WHERE v.regla_id = 'R1'")
                 valor_r1 = cur.fetchone()[0]
         finally:
             conn.close()
 
+        assert n_resultados == 250, "La simulación no debe persistir checklist en resolution_case"
         assert valor_r1 == "2", "La simulación no debe modificar la config activa"
 
     def test_simular_regla_nueva(self):

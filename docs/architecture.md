@@ -48,10 +48,11 @@ Rappi Trust & Safety recibe 200+ solicitudes de compensación/día marcadas como
                                         │ SQL :5432
                          ┌──────────────▼──────────────┐
                          │  PostgreSQL 16              │  infra/db/
-                         │  tabla: casos               │
+                         │  tabla: cases (crudo)       │
+                         │  features (calculado)       │
+                         │  resolution_case (resultados)│
                          │  configuracion_reglas       │
                          │  reglas_versiones           │
-                         │  resultados_reglas          │
                          └─────────────────────────────┘
 
             ┌─────────────────────────────────────────┐
@@ -121,7 +122,12 @@ apply_rules           ← motor genérico (src/rules/, reglas versionadas en DB)
 - **Reglas en DB (step 06b):** la configuración de reglas vive en
   `configuracion_reglas` + `reglas_versiones` (versionado con autoría y descripción
   del cambio). El equipo de fraude edita thresholds, activa/desactiva o crea reglas
-  desde la UI sin tocar código. Cada resultado por caso (`resultados_reglas`) queda
-  anclado a la versión exacta de la regla que lo procesó.
+  desde la UI sin tocar código. Todos los resultados por caso se consolidan en
+  `resolution_case` con el contrato separado por origen: `decision_regla`
+  (APROBAR/RECHAZAR/AMBIGUO/ESCALAR), `decision_llm` (veredicto discreto),
+  `justificacion_regla`/`justificacion_llm` y `senales_regla`/`senales_llm`
+  (formato `campo operador umbral = valor_real`), más el checklist por regla en
+  `reglas_checklist` JSONB y el análisis LLM crudo, anclado a la versión exacta de
+  la regla que procesó el caso.
   `src/rules/thresholds.yaml` sobrevive solo como seed de bootstrap
   (`python -m src.rules.seed_reglas`).

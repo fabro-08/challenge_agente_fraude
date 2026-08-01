@@ -1,4 +1,4 @@
-"""Seed de la tabla `casos` con los 150 casos originales del dataset.
+"""Seed de la tabla `cases` con los 150 casos originales del dataset.
 
 Lee ``data/Dataset_caso_3.xlsx`` (pestaña ``Caso3_Compensaciones``) e inserta
 los registros en PostgreSQL. Es idempotente: borra los casos originales
@@ -61,7 +61,7 @@ def cargar_dataset() -> pd.DataFrame:
 
 
 def seed() -> int:
-    """Inserta los casos originales en la tabla ``casos``.
+    """Inserta los casos originales en la tabla ``cases``.
 
     Returns:
         Cantidad de casos insertados.
@@ -81,11 +81,11 @@ def seed() -> int:
     try:
         with conn.cursor() as cur:
             # Idempotente: borra solo los originales, respeta sintéticos
-            cur.execute("DELETE FROM casos WHERE es_sintetico = FALSE;")
+            cur.execute("DELETE FROM cases WHERE es_sintetico = FALSE;")
             valores = [tuple(fila) for fila in df.itertuples(index=False)]
             execute_values(
                 cur,
-                f"INSERT INTO casos ({', '.join(COLUMNAS)}) VALUES %s",
+                f"INSERT INTO cases ({', '.join(COLUMNAS)}) VALUES %s",
                 valores,
             )
         conn.commit()

@@ -35,7 +35,7 @@ def health():
         with conn.cursor() as cur:
             cur.execute("SELECT 1 AS ok")
             cur.fetchone()
-            cur.execute("SELECT COUNT(*) AS n FROM casos")
+            cur.execute("SELECT COUNT(*) AS n FROM cases")
             total_casos = cur.fetchone()["n"]
             cur.execute("SELECT COUNT(*) AS n FROM configuracion_reglas WHERE activo = TRUE")
             reglas = cur.fetchone()["n"]
@@ -66,53 +66,28 @@ async def analyze(req: schemas.AnalyzeRequest):
     except RuntimeError as e:
         raise HTTPException(503, str(e)) from e
 
-    rule_details = resultado.get("rule_details") or []
-    conn = services.conectar()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT rv.version, cr.nombre, cr.tipo_regla
-                   FROM reglas_versiones rv
-                   JOIN configuracion_reglas cr ON cr.regla_id = rv.regla_id
-                   WHERE rv.version_id = %s""",
-                (None,),
-            )
-            versiones: dict[int, dict[str, Any]] = {}
-            # Cargar todas las version_ids de una
-            vids = [r["version_id"] for r in rule_details]
-            for vid in vids:
-                cur.execute(
-                    """SELECT rv.version, cr.nombre, cr.tipo_regla
-                       FROM reglas_versiones rv
-                       JOIN configuracion_reglas cr ON cr.regla_id = rv.regla_id
-                       WHERE rv.version_id = %s""",
-                    (vid,),
-                )
-                row = cur.fetchone()
-                if row:
-                    versiones[vid] = row
-    finally:
-        conn.close()
+    checklist = [
+        schemas.RuleChecklistItem(**item)
+        for item in resultado.get("reglas_checklist") or []
+    ]
 
-    checklist = []
-    for r in rule_details:
-        vinfo = versiones.get(r["version_id"], {})
-        checklist.append(schemas.RuleChecklistItem(
-            regla_id=r["regla_id"],
-            version=vinfo.get("version", 0),
-            nombre=vinfo.get("nombre", r.get("nombre", "")),
-            tipo_regla=vinfo.get("tipo_regla", r.get("tipo_regla", "")),
-            se_disparo=r["se_disparo"],
-            valor_actual=r.get("valor_actual"),
-            detalle=r.get("detalle"),
-        ))
+    decision_regla = resultado.get("decision_regla", "AMBIGUO")
+    llm_usado = resultado.get("llm_analysis") is not None
+    # ESCALAR forzado por reglas: la decisión es de las reglas aunque el LLM
+    # haya generado análisis enriquecido.
+    fuente = "reglas" if decision_regla == "ESCALAR" else ("llm" if llm_usado else "reglas")
 
     return schemas.AnalyzeResponse(
         case_id=req.case_id,
         final_decision=resultado["final_decision"],
-        justification=resultado["justification"],
-        signals=resultado["signals"],
-        llm_usado=resultado.get("llm_analysis") is not None,
+        fuente=fuente,
+        decision_regla=decision_regla,
+        decision_llm=resultado.get("decision_llm"),
+        justificacion_regla=resultado.get("justificacion_regla") or "",
+        justificacion_llm=resultado.get("justificacion_llm"),
+        senales_regla=resultado.get("senales_regla") or [],
+        senales_llm=resultado.get("senales_llm") or [],
+        llm_usado=llm_usado,
         llm_resultado=resultado.get("llm_resultado"),
         checklist=checklist,
     )
@@ -174,17 +149,20 @@ def list_cases(
     conn = services.conectar()
     try:
         with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) AS n FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id{wsql}", params)
+            cur.execute(f"SELECT COUNT(*) AS n FROM cases c LEFT JOIN resolution_case a ON a.caso_id = c.caso_id{wsql}", params)
             total = cur.fetchone()["n"]
 
             cur.execute(
                 f"""SELECT c.caso_id, c.usuario_id, c.ciudad, c.vertical,
+                           c.restaurante,
                            c.valor_orden_mxn, c.compensacion_solicitada_mxn,
                            c.flags_fraude_previos, c.es_sintetico,
                            a.decision AS recomendacion_agente,
-                           a.justificacion,
+                           a.fuente,
+                           a.decision_regla, a.decision_llm,
+                           a.justificacion_llm,
                            (a.llm_resultado IS NOT NULL) AS has_llm
-                      FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id{wsql}
+                      FROM cases c LEFT JOIN resolution_case a ON a.caso_id = c.caso_id{wsql}
                       ORDER BY c.caso_id LIMIT %s OFFSET %s""",
                 params + [limit, offset],
             )
@@ -202,10 +180,16 @@ def get_case(case_id: str):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT c.*, a.decision AS recomendacion_agente,
-                           a.justificacion, a.senales_usadas,
-                           a.llm_resultado, a.fuente
-                    FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id
+                """SELECT c.*, f.*,
+                           a.decision AS recomendacion_agente,
+                           a.justificacion_llm, a.justificacion_regla,
+                           a.senales_llm, a.senales_regla,
+                           a.reglas_checklist, a.llm_resultado, a.fuente,
+                           a.decision_regla, a.decision_llm,
+                           a.features_version
+                    FROM cases c
+                    LEFT JOIN features f ON f.caso_id = c.caso_id
+                    LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
                     WHERE c.caso_id = %s""",
                 (case_id,),
             )
@@ -215,35 +199,13 @@ def get_case(case_id: str):
 
             caso = _fila_a_dict(row)
             llm_resultado = caso.pop("llm_resultado", None)
-
-            cur.execute(
-                """SELECT cr.regla_id, rv.version, cr.nombre, cr.tipo_regla,
-                           rr.se_disparo, rr.valor_actual, rr.detalle
-                    FROM resultados_reglas rr
-                    JOIN reglas_versiones rv ON rv.version_id = rr.version_id
-                    JOIN configuracion_reglas cr ON cr.regla_id = rv.regla_id
-                    WHERE rr.caso_id = %s
-                    ORDER BY cr.regla_id""",
-                (case_id,),
-            )
-            checklist = [
-                schemas.RuleChecklistItem(
-                    regla_id=r["regla_id"],
-                    version=r["version"],
-                    nombre=r["nombre"],
-                    tipo_regla=r["tipo_regla"],
-                    se_disparo=r["se_disparo"],
-                    valor_actual=r["valor_actual"],
-                    detalle=r["detalle"],
-                )
-                for r in cur.fetchall()
-            ]
+            checklist = caso.pop("reglas_checklist", None) or []
     finally:
         conn.close()
 
     return schemas.CaseDetail(
         caso=caso,
-        checklist=checklist,
+        checklist=[schemas.RuleChecklistItem(**item) for item in checklist],
         llm_resultado=llm_resultado,
     )
 
@@ -257,19 +219,19 @@ def stats():
     conn = services.conectar()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS n FROM casos")
+            cur.execute("SELECT COUNT(*) AS n FROM cases")
             total = cur.fetchone()["n"]
 
             cur.execute(
                 """SELECT COALESCE(a.decision, 'PENDIENTE') AS decision, COUNT(*) AS n
-                   FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id
+                   FROM cases c LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
                    GROUP BY a.decision ORDER BY n DESC"""
             )
             distribucion = {r["decision"]: r["n"] for r in cur.fetchall()}
 
             cur.execute(
                 """SELECT c.es_sintetico, a.decision, COUNT(*) AS n
-                   FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id
+                   FROM cases c LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
                    GROUP BY c.es_sintetico, a.decision
                    ORDER BY 1, 3 DESC"""
             )

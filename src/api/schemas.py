@@ -24,6 +24,8 @@ class RuleChecklistItem(BaseModel):
     se_disparo: bool
     valor_actual: str | None
     detalle: str | None
+    descripcion: str | None = None
+    condiciones: list[dict[str, Any]] | None = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -31,8 +33,13 @@ class AnalyzeResponse(BaseModel):
 
     case_id: str
     final_decision: str
-    justification: str
-    signals: list[str]
+    fuente: str
+    decision_regla: str | None = None
+    decision_llm: str | None = None
+    justificacion_regla: str = ""
+    justificacion_llm: str | None = None
+    senales_regla: list[str] = []
+    senales_llm: list[str] = []
     llm_usado: bool
     llm_resultado: dict[str, Any] | None = None
     checklist: list[RuleChecklistItem]
@@ -73,12 +80,16 @@ class CaseListItem(BaseModel):
     usuario_id: str
     ciudad: str | None
     vertical: str | None
+    restaurante: str | None = None
     valor_orden_mxn: float | None
     compensacion_solicitada_mxn: float | None
     flags_fraude_previos: int | None
     recomendacion_agente: str | None
+    fuente: str | None = None
     es_sintetico: bool
-    justificacion: str | None = None
+    decision_regla: str | None = None
+    decision_llm: str | None = None
+    justificacion_llm: str | None = None
     has_llm: bool | None = None
 
 

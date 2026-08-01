@@ -28,17 +28,23 @@ def _cargar_casos(filtros: dict[str, Any] | None = None) -> list[dict[str, Any]]
             ``limite`` (int).
 
     Returns:
-        Lista de dicts con todas las columnas de la tabla ``casos``.
+        Lista de dicts con las columnas de ``cases`` + ``features`` y la
+        decisión almacenada como ``recomendacion_agente``.
     """
     filtros = filtros or {}
     where = []
     params: list[Any] = []
 
     if "es_sintetico" in filtros:
-        where.append("es_sintetico = %s")
+        where.append("c.es_sintetico = %s")
         params.append(filtros["es_sintetico"])
 
-    sql = "SELECT c.*, a.decision AS recomendacion_agente FROM casos c LEFT JOIN analisis_casos a ON a.caso_id = c.caso_id"
+    sql = (
+        "SELECT c.*, f.*, a.decision AS recomendacion_agente "
+        "FROM cases c "
+        "LEFT JOIN features f ON f.caso_id = c.caso_id "
+        "LEFT JOIN resolution_case a ON a.caso_id = c.caso_id"
+    )
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY c.caso_id"

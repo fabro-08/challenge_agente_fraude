@@ -1,4 +1,8 @@
-"""Nodo load_case: carga el caso desde PostgreSQL por caso_id."""
+"""Nodo load_case: carga los datos crudos del caso desde PostgreSQL.
+
+Los datos crudos vienen de la tabla ``cases`` (capa 1). Las features se cargan
+o calculan en ``compute_features``.
+"""
 
 import os
 
@@ -35,15 +39,8 @@ def load_case(state: CaseState) -> CaseState:
                           monto_compensado_90d_mxn, entrega_confirmada_gps,
                           tiempo_entrega_real_min, flags_fraude_previos,
                           motivo_reclamo, descripcion_reclamo,
-                          recomendacion_agente, es_sintetico,
-                          comp_ratio, burn_rate, freq_densidad,
-                          flag_inconsistencia_gps, flag_mentira_gps_alta,
-                          flag_retraso_critico, flag_account_abuse,
-                          score_riesgo_previo, longitud_reclamo,
-                          flag_palabras_criticas, riesgo_ciudad,
-                          riesgo_vertical, gps_paradoja_score,
-                          sospecha_nuevo_recurrente, ratio_deviation
-                   FROM casos WHERE caso_id = %s""",
+                          recomendacion_agente, es_sintetico
+                   FROM cases WHERE caso_id = %s""",
                 (state["case_id"],),
             )
             row = cur.fetchone()
