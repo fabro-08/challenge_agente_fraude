@@ -197,6 +197,7 @@ def _render_regla_editor(regla_id: str) -> None:
         condiciones_existentes: list[dict] = config.get("condiciones", [])
         match_type: str = config.get("match", "all")
         descripcion: str = config.get("descripcion", "")
+        explicacion: str = config.get("explicacion", "")
 
         st.markdown(f"**Descripción:** {descripcion}")
         col_m1, col_m2 = st.columns([2, 4])
@@ -210,6 +211,12 @@ def _render_regla_editor(regla_id: str) -> None:
         with col_m2:
             st.caption("all = todas las condiciones deben cumplirse, any = al menos una")
 
+        nueva_explicacion = st.text_area(
+            "Explicación (se muestra en la justificación del caso)",
+            value=explicacion,
+            key=f"expl_{regla_id}",
+        )
+
         st.subheader("Condiciones")
         nuevas_condiciones = _render_condition_builder(
             f"edit_{regla_id}",
@@ -218,6 +225,7 @@ def _render_regla_editor(regla_id: str) -> None:
 
         nueva_config = {
             "descripcion": descripcion,
+            "explicacion": nueva_explicacion,
             "match": nuevo_match,
             "condiciones": nuevas_condiciones,
         }
@@ -377,6 +385,10 @@ def _form_nueva_regla() -> None:
 
     prioridad = st.number_input("Prioridad", min_value=0, max_value=100, value=10, key="new_prioridad")
     descripcion = st.text_area("Descripción", key="new_descripcion", placeholder="Qué detecta esta regla")
+    explicacion = st.text_area(
+        "Explicación (opcional, se muestra en la justificación del caso)",
+        key="new_explicacion",
+    )
 
     match_type = st.selectbox("Match", ["all", "any"], key="new_match")
 
@@ -408,6 +420,7 @@ def _form_nueva_regla() -> None:
             "prioridad": prioridad,
             "config": {
                 "descripcion": descripcion,
+                "explicacion": explicacion,
                 "match": match_type,
                 "condiciones": condiciones,
             },

@@ -93,7 +93,7 @@ con el contrato separado por origen (reglas vs LLM).
 | `fuente` | VARCHAR(10) | `reglas` (heurística determinista) o `llm` (caso ambiguo analizado por el LLM). ESCALAR forzoso queda en `reglas` |
 | `decision_regla` | VARCHAR(10) | Resultado del motor de reglas: APROBAR, RECHAZAR, AMBIGUO o ESCALAR |
 | `decision_llm` | VARCHAR(10) | Veredicto discreto del LLM (solo casos que pasan por LLM) |
-| `justificacion_regla` | TEXT | Descripción de la(s) regla(s) que dispararon (`R1 — Usuario con 2 o más flags de fraude previos`) |
+| `justificacion_regla` | TEXT | Bloques por regla que disparó, separados por línea en blanco: `R1 — <descripción>` seguido de la `<explicacion>` preseteada en la config de la regla (`R1 — Usuario con 2 o más flags de fraude previos\nEl usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.`) |
 | `justificacion_llm` | TEXT | Justificación del LLM sin prefijo de decisión |
 | `senales_regla` | TEXT | Señales de reglas `campo operador umbral = valor real`, separadas por `\|` |
 | `senales_llm` | TEXT | Señales canónicas del LLM (snake_case), separadas por `\|` |
@@ -104,11 +104,11 @@ con el contrato separado por origen (reglas vs LLM).
 
 | Decisión | Casos | % |
 |---|---|---|
-| APROBAR | 105 | 42.0% |
-| RECHAZAR | 100 | 40.0% |
-| ESCALAR | 45 | 18.0% |
+| APROBAR | 103 | 41.2% |
+| RECHAZAR | 101 | 40.4% |
+| ESCALAR | 46 | 18.4% |
 
-Sobre los **150 casos originales**: APROBAR 65 · RECHAZAR 58 · ESCALAR 27
+Sobre los **150 casos originales**: APROBAR 67 · RECHAZAR 57 · ESCALAR 26
 (`data/150casos_analizados.xlsx`).
 
 ---

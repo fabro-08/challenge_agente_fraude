@@ -147,6 +147,7 @@ class RuleConfig(BaseModel):
     """Definición declarativa de una regla."""
 
     descripcion: str = ""
+    explicacion: str = ""
     match: Literal["all", "any"] = "all"
     condiciones: list[Condicion] = Field(..., min_length=1)
 

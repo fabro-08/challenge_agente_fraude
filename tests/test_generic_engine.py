@@ -168,6 +168,22 @@ class TestPrecedencia:
         disparadas = [r.regla_id for r in ev.rule_results if r.se_disparo]
         assert disparadas == ["R1"]
 
+    def test_explicacion_fluye_desde_config(self):
+        """La explicación preseteada de la regla viaja en el RuleResult."""
+        regla = _regla("R1", "RECHAZAR", [
+            {"campo": "flags_fraude_previos", "operador": ">=", "valor": 2},
+        ])
+        regla.config["explicacion"] = "El usuario ya está señalado por el sistema."
+        engine = GenericRuleEngine([regla])
+        res = engine.evaluate_case({"flags_fraude_previos": 3})
+        r1 = next(r for r in res.rule_results if r.regla_id == "R1")
+        assert r1.explicacion == "El usuario ya está señalado por el sistema."
+
+    def test_explicacion_vacia_por_defecto(self, engine_basico):
+        """Sin campo explicacion en config, el RuleResult la deja vacía."""
+        ev = engine_basico.evaluate_case({"flags_fraude_previos": 0, "comp_ratio": 0.5})
+        assert all(r.explicacion == "" for r in ev.rule_results)
+
 
 # ── Paridad con el motor original (integración DB) ────────────────────
 

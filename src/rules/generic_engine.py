@@ -66,6 +66,11 @@ class RuleDefinition:
     def descripcion(self) -> str:
         return str(self.config.get("descripcion", self.nombre))
 
+    @property
+    def explicacion(self) -> str:
+        """Texto preseteado que explica brevemente la regla (lenguaje de negocio)."""
+        return str(self.config.get("explicacion", "")).strip()
+
 
 @dataclass
 class ConditionResult:
@@ -90,6 +95,7 @@ class RuleResult:
     detalle: str
     valor_actual: str
     descripcion: str = ""
+    explicacion: str = ""
     condiciones: list[ConditionResult] = field(default_factory=list)
 
 
@@ -227,6 +233,7 @@ class GenericRuleEngine:
             detalle=detalle,
             valor_actual=valor_actual,
             descripcion=regla.descripcion,
+            explicacion=regla.explicacion,
             condiciones=resultados,
         )
 

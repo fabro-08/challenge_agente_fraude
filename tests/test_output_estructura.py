@@ -20,12 +20,14 @@ def _base_state(**kwargs) -> CaseState:
 
 
 def _regla(regla_id: str = "R1", tipo: str = "RECHAZAR",
-           descripcion: str = "Usuario con 2 o más flags de fraude previos") -> dict:
+           descripcion: str = "Usuario con 2 o más flags de fraude previos",
+           explicacion: str = "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.") -> dict:
     return {
         "regla_id": regla_id,
         "tipo_regla": tipo,
         "nombre": regla_id,
         "descripcion": descripcion,
+        "explicacion": explicacion,
         "se_disparo": True,
         "condiciones": [
             {"campo": "flags_fraude_previos", "operador": ">=",
@@ -47,7 +49,10 @@ def test_rechazar_por_reglas():
     assert st["decision_regla"] == "RECHAZAR"
     assert st["decision_llm"] is None
     assert st["senales_llm"] == []
-    assert st["justificacion_regla"] == "R1 — Usuario con 2 o más flags de fraude previos"
+    assert st["justificacion_regla"] == (
+        "R1 — Usuario con 2 o más flags de fraude previos\n"
+        "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema."
+    )
     assert st["justification"] == st["justificacion_regla"]
 
 
@@ -55,11 +60,44 @@ def test_aprobar_por_reglas():
     st = final_decision(_base_state(
         rule_result="APROBAR", decision_regla="APROBAR",
         senales_regla=["gps_confirmada_usuario_antiguo"],
-        rule_details=[_regla("A3", "APROBAR", "GPS confirmado, sin retraso, ratio normal, usuario antiguo")],
+        rule_details=[_regla("A3", "APROBAR", "GPS confirmado, sin retraso, ratio normal, usuario antiguo",
+                             explicacion="Entrega confirmada, sin demora, compensación que no excede la orden y usuario con historial.")],
     ))
     assert st["final_decision"] == "APROBAR"
     assert st["decision_llm"] is None
-    assert st["justificacion_regla"] == "A3 — GPS confirmado, sin retraso, ratio normal, usuario antiguo"
+    assert st["justificacion_regla"] == (
+        "A3 — GPS confirmado, sin retraso, ratio normal, usuario antiguo\n"
+        "Entrega confirmada, sin demora, compensación que no excede la orden y usuario con historial."
+    )
+
+
+def test_justificacion_regla_multilineas_bloques():
+    """Varias reglas disparadas → un bloque por regla, separados por doble salto."""
+    st = final_decision(_base_state(
+        rule_result="RECHAZAR", decision_regla="RECHAZAR",
+        senales_regla=["flags_fraude_previos >= 2 = 3", "score_riesgo_previo > 10 = 14"],
+        rule_details=[
+            _regla(),
+            _regla("R7", "RECHAZAR", "score_riesgo_previo (flags×2 + comps_90d×0.5) > p90",
+                   explicacion="El score de riesgo previo supera el p90 del dataset: historial inaceptable."),
+        ],
+    ))
+    esperado = (
+        "R1 — Usuario con 2 o más flags de fraude previos\n"
+        "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.\n\n"
+        "R7 — score_riesgo_previo (flags×2 + comps_90d×0.5) > p90\n"
+        "El score de riesgo previo supera el p90 del dataset: historial inaceptable."
+    )
+    assert st["justificacion_regla"] == esperado
+
+
+def test_justificacion_regla_sin_explicacion():
+    """Si la regla no tiene explicacion (legacy), solo se muestra la cabecera."""
+    st = final_decision(_base_state(
+        rule_result="RECHAZAR", decision_regla="RECHAZAR",
+        rule_details=[_regla(explicacion="")],
+    ))
+    assert st["justificacion_regla"] == "R1 — Usuario con 2 o más flags de fraude previos"
 
 
 def test_escalar_forzado_con_llm():

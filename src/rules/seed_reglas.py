@@ -53,6 +53,7 @@ def construir_seed(thresholds_path: str | None = None) -> list[tuple[str, str, s
         0,
         {
             "descripcion": t["escalar_forzoso"]["flag_palabras_criticas"]["descripcion"],
+            "explicacion": t["escalar_forzoso"]["flag_palabras_criticas"]["explicacion"],
             "match": "all",
             "condiciones": [
                 {
@@ -82,6 +83,7 @@ def construir_seed(thresholds_path: str | None = None) -> list[tuple[str, str, s
             i,
             {
                 "descripcion": cfg["descripcion"],
+                "explicacion": cfg["explicacion"],
                 "match": "all",
                 "condiciones": [{"campo": campo, "operador": operador, "valor": cfg["valor"]}],
             },
@@ -96,6 +98,7 @@ def construir_seed(thresholds_path: str | None = None) -> list[tuple[str, str, s
         1,
         {
             "descripcion": a1["descripcion"],
+            "explicacion": a1["explicacion"],
             "match": "all",
             "condiciones": [
                 {"campo": "flag_retraso_critico", "operador": "==", "valor": True},
@@ -112,6 +115,7 @@ def construir_seed(thresholds_path: str | None = None) -> list[tuple[str, str, s
         2,
         {
             "descripcion": a["usuario_sano"]["descripcion"],
+            "explicacion": a["usuario_sano"]["explicacion"],
             "match": "all",
             "condiciones": [
                 {"campo": "flags_fraude_previos", "operador": "<=", "valor": a2["flags_max"]},
@@ -131,6 +135,7 @@ def construir_seed(thresholds_path: str | None = None) -> list[tuple[str, str, s
         3,
         {
             "descripcion": a["gps_ok_sano"]["descripcion"],
+            "explicacion": a["gps_ok_sano"]["explicacion"],
             "match": "all",
             "condiciones": [
                 {"campo": "entrega_confirmada_gps", "operador": "==", "valor": GPS_CONFIRMADA},

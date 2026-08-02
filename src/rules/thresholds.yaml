@@ -9,36 +9,43 @@ rechazar:
   flags_minimos:
     valor: 2
     descripcion: "Usuario con 2 o más flags de fraude previos"
+    explicacion: "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema."
     fuente: "EDA: flags_fraude_previos correlaciona r=0.74 con num_compensaciones_90d"
 
   comp_ratio_maximo:
     valor: 0.99
     descripcion: "Compensación solicitada > 99% del valor de la orden"
+    explicacion: "Pide como compensación más del 99% del valor de la orden, cuando lo típico es ~80%. Pedir el valor completo es señal de fraude."
     fuente: "EDA: p99 de comp_ratio = 0.99 sobre 150 casos. Nadie pide más de lo que pagó"
 
   freq_densidad_maximo:
     valor: 0.66
     descripcion: "freq_densidad > p95 del dataset original"
+    explicacion: "Ritmo de reclamos por día por encima del p95 del dataset: patrón de reclamos atípico."
     fuente: "EDA: p95 de freq_densidad = 0.66. Más de 0.66 reclamos/día es atípico"
 
   compensacion_p99:
     valor: 604.64
     descripcion: "Compensación solicitada > p99 del dataset original"
+    explicacion: "Solo el 1% de las compensaciones supera este monto: es atípico y se rechaza automáticamente."
     fuente: "EDA: p99 compensacion_solicitada_mxn = 604.64"
 
   flag_inconsistencia_gps:
     valor: true
     descripcion: "Usuario dice 'Orden no llegó' pero GPS confirma entrega"
+    explicacion: "El reclamo dice 'Orden no llegó' pero el GPS confirma la entrega: contradicción directa con la telemetría."
     fuente: "Feature flag_inconsistencia_gps del step 02 (9 casos originales)"
 
   score_riesgo_previo_maximo:
     valor: 10.0
     descripcion: "score_riesgo_previo (flags×2 + comps_90d×0.5) > p90"
+    explicacion: "El score de riesgo previo (flags×2 + reclamos×0.5) supera el p90 del dataset: historial inaceptable."
     fuente: "Step 02: p90 de score_riesgo_previo = 10.0"
 
   flag_account_abuse:
     valor: true
     descripcion: "Usuario < 90 días de antigüedad con > p95 reclamos en 90d"
+    explicacion: "Cuenta nueva (< 90 días) con récord de reclamos: la señal de fraude más fuerte del dataset."
     fuente: "EDA: usuarios 0-30d tienen 8.6 reclamos media vs 1.5 en 365d+"
 
 # ── Reglas de APROBAR ────────────────────────────────────────────────
@@ -46,6 +53,7 @@ rechazar:
 aprobar:
   retraso_critico_con_motivo:
     descripcion: "Entrega demorada (> p90 = 96 min) Y queja coherente con demora"
+    explicacion: "La telemetría respalda la queja (demora real documentada): no se penaliza al usuario legítimo."
     fuente: "EDA: p90 tiempo_entrega_real_min = 96 min. Auto-aprobar si datos respaldan"
     motivos_elegibles:
       - "Orden llegó tarde"
@@ -53,6 +61,7 @@ aprobar:
 
   usuario_sano:
     descripcion: "Sin flags, comp_ratio bajo, GPS ok, pocos reclamos, antigüedad > 90d"
+    explicacion: "Perfil de menor riesgo: sin flags, compensación razonable, entrega confirmada, pocos reclamos y antigüedad."
     fuente: "Coherencia: usuario legítimo sin señales de fraude"
     condiciones:
       flags_max: 0
@@ -62,6 +71,7 @@ aprobar:
 
   gps_ok_sano:
     descripcion: "GPS confirmado, sin retraso, ratio normal, usuario antiguo"
+    explicacion: "Entrega confirmada, sin demora, compensación que no excede la orden y usuario con historial."
     fuente: "Perfil de usuario legítimo con historial"
     condiciones:
       comp_ratio_max: 1.0
@@ -73,5 +83,6 @@ escalar_forzoso:
   flag_palabras_criticas:
     valor: true
     descripcion: "Reclamo menciona alergia, intoxicación, policía, sangre, abogado, demanda"
+    explicacion: "El reclamo menciona términos de riesgo legal o de salud (alergia, policía, demanda…). Lo revisa un humano, no el sistema."
     fuente: "Feature flag_palabras_criticas del step 02. Seguridad de marca."
 

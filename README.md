@@ -21,21 +21,23 @@ en lugar de 15-25 minutos.
 | **UI (Streamlit)** | Dashboard de KPIs, explorador de casos, configuración de reglas, políticas |
 | **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados y con checklist de reglas |
 
-**Resultado sobre los 250 casos:** ESCALAR 132 · RECHAZAR 83 · APROBAR 35.
-Sobre los **150 casos originales**: ESCALAR 79 · RECHAZAR 50 · APROBAR 21
+**Resultado sobre los 250 casos:** APROBAR 103 · RECHAZAR 101 · ESCALAR 46.
+Sobre los **150 casos originales**: APROBAR 67 · RECHAZAR 57 · ESCALAR 26
 (ver `data/150casos_analizados.xlsx`).
 
 **Stack:** Python 3.12 · LangGraph · FastAPI · Streamlit · PostgreSQL 16 · Docker ·
-Playwright/pytest (74 tests).
+Playwright/pytest (90 tests).
 
 ---
 
 ## Decisiones de negocio clave
 
 1. **Sin modelo ML:** el dataset es pequeño (150 casos). Se usan **reglas heurísticas**
-   (documentadas en `docs/politicas_decision.md`) + **LLM para texto libre** en casos ambiguos.
+   (documentadas en `docs/politicas_decision.md`) + **LLM para texto libre** en casos
+   ambiguos y en escalados forzosos (aportando análisis, sin poder cambiar la decisión).
 2. **ESCALAR no es un default:** solo se escala cuando hay ambigüedad real; el escalado
-   forzoso (palabras críticas de marca) es una decisión explícita de seguridad.
+   forzoso (palabras críticas de marca) es una decisión explícita de seguridad que pasa
+   por el LLM pero conserva `fuente='reglas'`.
 3. **Reglas versionadas en DB:** fraude edita thresholds desde la UI, cada cambio genera
    nueva versión con autor, y el simulador muestra el impacto antes de guardar.
 
@@ -51,16 +53,23 @@ Agente CS (humano) ── HTTP :8501 ──► Streamlit UI
                                         │
                                         ▼
                             LangGraph Pipeline (src/pipeline/)
-                        load_case → features → reglas → llm → decision
+                  load_case → features → apply_rules
+                         │                     │
+                         │  regla APROBAR ──────┴──► decision: APROBAR
+                         │  regla RECHAZAR ─────────► decision: RECHAZAR
+                         │  ESCALAR forzoso ─────────► decision: ESCALAR (fuente=reglas)
+                         │  AMBIGUO ──► llm_classify ──► decision: APROBAR|RECHAZAR|ESCALAR (fuente=llm)
                                         │  SQL :5432
                                         ▼
                               PostgreSQL 16 (infra/db/)
-                    casos · analisis_casos · configuracion_reglas
-                    reglas_versiones · resultados_reglas · usuarios_fraude
+                    cases · features · resolution_case · configuracion_reglas
+                    reglas_versiones · usuarios_fraude
 ```
 
 Flujo de decisión: reglas **RECHAZAR** primero (prevenir fraude), luego **APROBAR**
-(no penalizar legítimos) y el resto **ESCALAR + LLM**. Detalle en
+(no penalizar legítimos). Lo que queda **AMBIGUO** lo decide el LLM; un **ESCALAR
+forzoso** (palabras críticas) pasa por el LLM solo para aportar análisis, pero la
+decisión final queda en `ESCALAR` con `fuente='reglas'`. Detalle en
 `docs/architecture.md` y `docs/politicas_decision.md`.
 
 ---
@@ -73,7 +82,7 @@ Requisitos: Docker + Docker Compose v2, Python ≥ 3.12.
 # 1. Levanta DB + API + UI (seed automático: 250 casos analizados)
 make up
 
-# 2. Verifica el entorno (lint, typecheck, 74 tests, healthchecks)
+# 2. Verifica el entorno (lint, typecheck, 90 tests, healthchecks)
 ./init.sh
 ```
 
@@ -91,7 +100,7 @@ Accesos:
 
 ```bash
 ./init.sh                 # todos los bloques [OK]
-pytest tests/ -q          # 74 tests
+pytest tests/ -q          # 90 tests
 ```
 
 ---
@@ -154,7 +163,7 @@ case3_project/
 │   ├── rules/             → motor genérico, repository, simulador, seed
 │   └── ui/                → Streamlit (dashboard, casos, reglas, políticas)
 ├── scripts/               → utilidades (export Excel)
-├── tests/                 → 74 tests (unitarios + integración + E2E Playwright)
+├── tests/                 → 90 tests (unitarios + integración + E2E Playwright)
 ├── infra/
 │   ├── docker-compose.yml → db + api + ui
 │   ├── db/init/           → esquema + seed reproducible
@@ -166,7 +175,7 @@ case3_project/
 
 ## Testing
 
-- **74 tests:** 8 unitarios (reglas) + 36 motor genérico + 20 API + 10 E2E Playwright.
+- **90 tests:** 8 unitarios (reglas legacy) + 38 motor genérico + 13 contrato de salida + 21 API + 10 E2E Playwright.
 - Reporte HTML en `log_review/test_report.html` y Markdown en `log_review/test_e2e_*.md`.
 - Screenshots de cada pantalla en `log_review/`.
 

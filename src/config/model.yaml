@@ -1,0 +1,20 @@
+# Parámetros del modelo LLM de decisión de casos (no secretos).
+# Fuente de verdad para la config del cliente en llm_classify.
+# Los secretos (OPENROUTER_API_KEY) viven en `.env`, NUNCA aquí.
+#
+# Overrides por env var (12-factor):
+#   MODEL_FRAUD, LLM_BASE_URL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_MAX_RETRIES,
+#   LLM_TIMEOUT_SECONDS, LLM_MAX_CONCURRENCIA, LLM_INTENTOS_PARSING,
+#   LLM_PROMPT_FILE, LLM_EXAMPLES_FILE.
+
+llm:
+  model: qwen/qwen3.7-flash          # override: MODEL_FRAUD
+  base_url: https://openrouter.ai/api/v1
+  temperature: 0
+  max_tokens: 2048
+  max_retries: 3
+  timeout_seconds: 30
+  max_concurrencia: 5
+  intentos_parsing: 2
+  prompt_file: llm_system.txt        # relativo a src/config/prompts/
+  examples_file: llm_examples.md     # relativo a src/config/prompts/

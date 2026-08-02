@@ -93,6 +93,26 @@ def _color_badge(decision: str) -> str:
     return f'<span style="background-color:{color};color:white;padding:2px 8px;border-radius:4px;font-weight:bold">{decision}</span>'
 
 
+def _render_bloques(texto: str) -> None:
+    """Renderiza texto por bloques respetando los saltos de línea.
+
+    ``justificacion_regla`` (y ``justificacion_llm``) vienen con bloques
+    separados por ``\\n\\n`` y líneas internas por ``\\n``. Streamlit colapsa
+    los ``\\n`` simples en markdown, así que cada línea se renderiza aparte:
+    la primera de cada bloque en negrita (cabecera "R1 — …"), el resto normal.
+    """
+    bloques = [b for b in texto.split("\n\n") if b and b.strip()]
+    for i, bloque in enumerate(bloques):
+        lineas = [l for l in (bloque.split("\n")) if l.strip()]
+        if not lineas:
+            continue
+        st.markdown(f"**{lineas[0]}**")
+        for extra in lineas[1:]:
+            st.markdown(extra)
+        if i < len(bloques) - 1:
+            st.markdown("")
+
+
 def _estilo_checklist(df_check: pd.DataFrame) -> pd.DataFrame.style:
     """Semaforiza el checklist: color por tipo de regla y resalta las disparadas."""
 
@@ -378,7 +398,7 @@ def _render_detail(case_id: str) -> None:
     if justificacion_regla:
         with st.container(border=True):
             st.markdown(":material/rule: **Justificación (reglas)**")
-            st.write(justificacion_regla)
+            _render_bloques(justificacion_regla)
 
     # ── 1.3 Features del caso ─────────────────────────────────────────
     with st.container(border=True):
@@ -434,7 +454,7 @@ def _render_detail(case_id: str) -> None:
             justificacion = caso.get("justificacion_llm", "") or ""
             if justificacion:
                 st.markdown("_Justificación_")
-                st.write(justificacion)
+                _render_bloques(justificacion)
             señales = llm_resultado.get("señales_explicadas", [])
             if señales:
                 st.markdown("_Señales explicadas_")

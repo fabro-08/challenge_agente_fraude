@@ -26,13 +26,24 @@ from src.rules.signals import formato_senal_regla
 logger = logging.getLogger(__name__)
 
 
-def _aplicar_generico(state: CaseState) -> CaseState:
-    """Evalúa con el motor genérico (reglas versionadas en DB)."""
-    features = state["features"]
+def evaluar_reglas_generico(features: dict) -> tuple[list[dict], str]:
+    """Evalúa las reglas activas contra ``features`` con el motor genérico.
+
+    Compartido entre el nodo ``apply_rules`` y el backfill de justificaciones
+    (``scripts/backfill_justificacion_regla.py``) para garantizar el mismo
+    formato de ``rule_details`` (evita drift entre pipeline y scripts).
+
+    Args:
+        features: Diccionario del caso (columnas de ``cases`` + ``features``).
+
+    Returns:
+        Tupla (``rule_details``, ``decision_motor``) donde ``decision_motor``
+        es APROBAR | RECHAZAR | AMBIGUO | ESCALAR.
+    """
     engine = GenericRuleEngine(repository.cargar_reglas_activas())
     evaluacion = engine.evaluate_case(features)
 
-    state["rule_details"] = [
+    rule_details = [
         {
             "regla_id": r.regla_id,
             "version_id": r.version_id,
@@ -40,6 +51,7 @@ def _aplicar_generico(state: CaseState) -> CaseState:
             "tipo_regla": r.tipo_regla,
             "se_disparo": r.se_disparo,
             "descripcion": r.descripcion,
+            "explicacion": r.explicacion,
             "condiciones": [
                 {
                     "campo": c.campo,
@@ -55,9 +67,17 @@ def _aplicar_generico(state: CaseState) -> CaseState:
         }
         for r in evaluacion.rule_results
     ]
+    return rule_details, evaluacion.decision
+
+
+def _aplicar_generico(state: CaseState) -> CaseState:
+    """Evalúa con el motor genérico (reglas versionadas en DB)."""
+    features = state["features"]
+    rule_details, decision_motor = evaluar_reglas_generico(features)
+
+    state["rule_details"] = rule_details
 
     # Resultado crudo del motor: APROBAR | RECHAZAR | AMBIGUO | ESCALAR.
-    decision_motor = evaluacion.decision
     state["decision_regla"] = decision_motor
 
     # Señales "campo operador umbral = valor_real" de las reglas que dispararon.
@@ -76,9 +96,9 @@ def _aplicar_generico(state: CaseState) -> CaseState:
     elif decision_motor in ("APROBAR", "RECHAZAR"):
         state["rule_result"] = decision_motor
         # La primera regla que disparó (por prioridad dentro del tipo)
-        for r in evaluacion.rule_results:
-            if r.se_disparo and r.tipo_regla == decision_motor:
-                state["rule_disparada"] = f"{r.regla_id}: {r.nombre}"
+        for r in state["rule_details"]:
+            if r["se_disparo"] and r["tipo_regla"] == decision_motor:
+                state["rule_disparada"] = f"{r['regla_id']}: {r['nombre']}"
                 break
     else:
         # AMBIGUO: lo resuelve el LLM.

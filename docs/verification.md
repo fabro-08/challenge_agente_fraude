@@ -132,7 +132,7 @@ pytest tests/test_e2e.py -v --browser chromium
 pytest tests/ --html=log_review/test_report.html --self-contained-html
 ```
 
-- [ ] 74+ tests pasan (unitarios + integración + E2E browser)
+- [ ] 90 tests pasan (unitarios + integración + E2E browser)
 - [ ] Playwright interactúa con las 4 páginas sin crashes
 - [ ] Reporte HTML (`log_review/test_report.html`) y Markdown (`log_review/test_e2e_*.md`) generados
 - [ ] Screenshots de cada página en `log_review/`

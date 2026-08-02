@@ -202,7 +202,29 @@ El LLM participa solo para aportar análisis enriquecido
 
 ---
 
-## 7. Cambios y versiones
+## 7. Justificación con textos preseteado (`explicacion`)
+
+Cada regla lleva un campo `explicacion` (lenguaje de negocio) en su `config` JSONB,
+gestionado desde la UI junto con el resto de la regla. Es la fuente de verdad para la
+justificación persistida en `resolution_case.justificacion_regla`.
+
+Formato persistido, un bloque por regla que disparó (bloques separados por línea en blanco):
+
+```
+R1 — Usuario con 2 o más flags de fraude previos
+El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.
+```
+
+- La primera línea es `{regla_id} — {descripcion}` y la segunda la `explicacion` de la config.
+- Si una regla no tiene `explicacion`, se persiste solo la cabecera (compatibilidad hacia atrás).
+- La UI renderiza cada bloque con la cabecera en negrita y respeta los saltos de línea.
+- El backfill `scripts/backfill_justificacion_regla.py` re-sincroniza `explicacion` en la versión
+  actual de cada regla y recalcula `justificacion_regla` de los casos ya resueltos por reglas
+  usando exactamente el mismo código del pipeline (sin LLM).
+
+---
+
+## 8. Cambios y versiones
 
 | Versión | Fecha | Cambios |
 |---|---|---|

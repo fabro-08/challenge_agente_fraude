@@ -12,10 +12,10 @@
 - [ ] **03-Reglas:** 150 casos clasificados sin NaN, `thresholds.yaml`, `docs/politicas_decision.md`
 - [ ] **04-Infra:** 3 contenedores healthy, tabla `casos` con 150 registros (`es_sintetico=FALSE`)
 - [ ] **05-Synthetic:** 100 casos sintéticos, KS-test p > 0.05, en DB con `es_sintetico=TRUE`
-- [ ] **06-Pipeline:** grafo compila, invoke retorna decision + justification + signals + confidence
+- [ ] **06-Pipeline:** grafo compila, invoke retorna `decision` + `fuente` + `decision_regla`/`decision_llm` + `senales_regla`/`senales_llm` + `justificacion_regla`/`justificacion_llm`
 - [ ] **07-API:** `/health` 200, `/analyze/batch` persiste resultados, OpenAPI en `/docs`
 - [ ] **08-UI:** dashboard con KPIs, filtros funcionales, detalle de caso legible
-- [ ] **09-Testing:** 74 tests pasan (unitarios + API + E2E Playwright), reportes HTML y MD en `log_review/`
+- [ ] **09-Testing:** 90 tests pasan (unitarios + API + E2E Playwright), reportes HTML y MD en `log_review/`
 
 ## Proyecto completo
 

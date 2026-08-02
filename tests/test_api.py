@@ -186,6 +186,7 @@ class TestRules:
             json={
                 "config": {
                     "descripcion": "Usuario con 2 o más flags de fraude previos",
+                    "explicacion": "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.",
                     "match": "all",
                     "condiciones": [{"campo": "flags_fraude_previos", "operador": ">=", "valor": 2}],
                 },

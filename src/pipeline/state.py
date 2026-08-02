@@ -19,12 +19,13 @@ class CaseState(TypedDict, total=False):
         decision_llm: Veredicto discreto del LLM
             (APROBAR / RECHAZAR / ESCALAR). None si no se ejecutó LLM.
         rule_details: Checklist completo por regla (regla_id, version_id,
-            nombre, tipo_regla, se_disparo, descripcion, condiciones,
-            valor_actual, detalle).
+            nombre, tipo_regla, se_disparo, descripcion, explicacion,
+            condiciones, valor_actual, detalle).
         reglas_checklist: Checklist enriquecido (con ``version``) para
             persistir en ``resolution_case.reglas_checklist`` (JSONB).
-        justificacion_regla: Descripción de la(s) regla(s) disparada(s) en
-            formato ``R1 — <descripcion>``. Vacío si no aplica.
+        justificacion_regla: Un bloque por regla disparada: ``R1 — <descripcion>``
+            y la ``<explicacion>`` (texto preseteado) en la línea siguiente;
+            los bloques se separan con ``\\n\\n``. Vacío si no aplica.
         justificacion_llm: Justificación generada por el LLM. None si el LLM
             no participó.
         senales_regla: Señales de las reglas disparadas en formato

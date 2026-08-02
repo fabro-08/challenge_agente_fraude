@@ -3,8 +3,8 @@
 Usa una jerarquía determinista (no score continuo). Tres vías:
 
 1. APROBAR/RECHAZAR por reglas → decisión fija, sin LLM.
-   - ``justificacion_regla`` = descripción de la(s) regla(s) disparada(s)
-     (formato ``R1 — <descripcion>``).
+   - ``justificacion_regla`` = un bloque por regla disparada
+     (``R1 — <descripcion>`` + ``<explicacion>`` en la línea siguiente).
    - ``senales_regla`` = ``campo operador umbral = valor_real``.
 2. ESCALAR forzoso (palabras críticas) → decisión FORZADA a ESCALAR; el LLM
    participa solo para aportar análisis (``justificacion_llm``/``senales_llm``).
@@ -36,15 +36,22 @@ def _sin_prefijo(texto: str) -> str:
 
 
 def _justificacion_reglas(rule_details: list[dict], decision: str) -> str:
-    """Justificación de reglas: ``regla_id — descripcion`` de las disparadas.
+    """Justificación de reglas: un bloque por regla disparada.
+
+    Cada bloque tiene dos líneas (separadas por ``\\n``):
+        ``regla_id — descripcion``
+        ``explicacion``  (texto preseteado; se omite si la regla no lo tiene)
+
+    Los bloques se unen con ``\\n\\n`` para respetar el salto de línea al
+    renderizarse (UI, API, Excel).
 
     Args:
         rule_details: Checklist por regla con ``regla_id``, ``descripcion``,
-            ``tipo_regla`` y ``se_disparo``.
+            ``explicacion``, ``tipo_regla`` y ``se_disparo``.
         decision: Decisión que resuelve (APROBAR/RECHAZAR/ESCALAR).
 
     Returns:
-        Texto con la descripción de las reglas que dispararon la decisión.
+        Texto con las reglas que dispararon la decisión, una por bloque.
     """
     tipo = _TIPO_POR_DECISION.get(decision)
     disparadas = [
@@ -56,11 +63,13 @@ def _justificacion_reglas(rule_details: list[dict], decision: str) -> str:
     if not disparadas:
         return ""
 
-    partes = []
+    bloques = []
     for r in disparadas:
         desc = r.get("descripcion") or r.get("nombre", "")
-        partes.append(f"{r.get('regla_id', '?')} — {desc}" if desc else r.get("regla_id", "?"))
-    return "; ".join(partes)
+        cabecera = f"{r.get('regla_id', '?')} — {desc}" if desc else r.get("regla_id", "?")
+        explicacion = (r.get("explicacion") or "").strip()
+        bloques.append(f"{cabecera}\n{explicacion}" if explicacion else cabecera)
+    return "\n\n".join(bloques)
 
 
 def _llm_justificacion(llm: dict) -> str | None:

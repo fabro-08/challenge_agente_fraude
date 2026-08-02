@@ -17,88 +17,42 @@ import re
 
 from langchain_openai import ChatOpenAI
 
+from src.config import get_llm_config, load_prompts
 from src.pipeline.state import CaseState
 from src.rules.signals import normalizar_señal_llm
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Eres un analista de fraude en compensaciones de delivery con 10 años de experiencia.
-
-## Reglas de negocio
-- Un reclamo legítimo tiene una justificación coherente con la evidencia disponible
-- El historial del usuario (flags, compensaciones previas, antigüedad) es crucial
-- La consistencia GPS es un factor determinante
-- Palabras críticas (alergia, intoxicación, policía, sangre, demanda, abogado) requieren escalación
-- Una cuenta nueva (< 90 días) con múltiples reclamos es sospechosa
-
-## Criterios de decisión
-- APROBAR: el reclamo es consistente, no hay señales de fraude
-- RECHAZAR: hay evidencia clara de abuso o inconsistencia
-- ESCALAR: hay ambigüedad, riesgos de marca, o datos insuficientes
-
-## Formato de respuesta
-Devuelve SOLO este JSON sin markdown ni texto adicional:
-{"justificacion": "breve", "resumen": "resumen del caso", "veredicto": "APROBAR:|RECHAZAR:|ESCALAR: explicación", "señales_explicadas": [{"señal": "nombre_canonico", "explicacion": "detalle", "peso": "alto|medio|bajo"}]}
-
-## Señales canónicas
-En "señales_explicadas", el campo "señal" DEBE ser uno de estos identificadores
-snake_case (elige los que apliquen, 1 a 4 por caso):
-- descripcion_incoherente        (la descripción no coincide con la evidencia)
-- alta_frecuencia_reclamos       (muchos reclamos en 90 días)
-- entrega_gps_no_confirmada      (sin evidencia GPS que valide o refute)
-- evidencia_gps_parcial          (GPS ambigua)
-- compensacion_elevada           (ratio de compensación alto)
-- antiguedad_moderada_con_alta_reincidencia  (cuenta reciente + reincidencia)
-- flag_fraude_previo             (historial con flag de fraude)
-- reclamo_subjetivo              (difícil de verificar objetivamente)
-- account_abuse                  (patrón de abuso de cuenta)
-- palabras_criticas_seguridad    (términos de riesgo legal/salud)
-
---- EJEMPLOS ---
-
-Ejemplo 1 - APROBAR:
-Reclamo: "Llegó comida diferente, creo que confundieron mi pedido."
-Contexto: 2 reclamos en 90d, 0 flags fraude, antiguedad 1590d, GPS NO confirmada.
-Reglas evaluadas: A2 (usuario_sano), A3 (gps_ok_sano)
-Señales detectadas: ninguna
-Output: {"justificacion": "Usuario con 0 flags y 4+ años de antigüedad. Reclamo sin señales de fraude.", "resumen": "Error operativo del restaurante en usuario confiable.", "veredicto": "APROBAR: reclamo legítimo de un usuario sin historial de fraude.", "señales_explicadas": [{"señal": "descripcion_incoherente", "explicacion": "la descripción no aplica, perfil confiable sin señales", "peso": "bajo"}]}
-
-Ejemplo 2 - RECHAZAR:
-Reclamo: "Nunca llegó mi pedido aunque el GPS dice que llegó, quiero reembolso completo"
-Contexto: 5 reclamos en 90d, 1 flag fraude, antiguedad 45d, GPS SÍ - confirmada.
-Reglas evaluadas: R5 (inconsistencia_gps), R6 (account_abuse)
-Señales detectadas: inconsistencia GPS, cuenta nueva con abuso
-Output: {"justificacion": "GPS confirma entrega pero usuario dice no recibir. Cuenta nueva con alta frecuencia de reclamos.", "resumen": "Contradicción entre reclamo y evidencia GPS en cuenta nueva abusiva.", "veredicto": "RECHAZAR: inconsistencia con GPS y patrón de abuso en cuenta nueva.", "señales_explicadas": [{"señal": "entrega_gps_no_confirmada", "explicacion": "Usuario reclama no llegó pero GPS confirma entrega", "peso": "alto"}, {"señal": "account_abuse", "explicacion": "antiguedad=45d, 5 reclamos en 90d", "peso": "medio"}]}
-
-Ejemplo 3 - ESCALAR:
-Reclamo: "La comida me cayó mal y tuve que ir al hospital, exijo compensación o voy a demandar"
-Contexto: 1 reclamo en 90d, 0 flags fraude, antiguedad 365d, GPS SÍ - confirmada.
-Reglas evaluadas: ESCALAR-1 (palabras_criticas)
-Señales detectadas: palabras críticas (hospital, demandar)
-Output: {"justificacion": "El reclamo menciona términos de riesgo legal (hospital, demandar) que requieren revisión humana.", "resumen": "Reclamo con implicaciones legales y de salud que no debe automatizarse.", "veredicto": "ESCALAR: contiene palabras críticas que requieren revisión humana.", "señales_explicadas": [{"señal": "palabras_criticas_seguridad", "explicacion": "menciona 'hospital' y 'demandar' en el reclamo", "peso": "alto"}]}
-"""
+_SYSTEM_PROMPT, _EJEMPLOS = load_prompts()
+# Se ensambla igual que el prompt histórico original (bloques separados por
+# línea en blanco + salto de línea final) para no alterar el texto enviado.
+SYSTEM_PROMPT = f"{_SYSTEM_PROMPT}\n\n{_EJEMPLOS}\n"
 
 # Cliente compartido: una sola instancia reutiliza las conexiones httpx y evita
 # el setup por llamada. max_retries reintenta automáticamente 429/5xx/timeout.
 _llm: ChatOpenAI | None = None
 
 # Límite de llamadas LLM simultáneas (protege el rate-limit del proveedor).
-LLM_MAX_CONCURRENCIA = int(os.getenv("LLM_MAX_CONCURRENCIA", "5"))
-LLM_SEMAFORO = asyncio.Semaphore(LLM_MAX_CONCURRENCIA)
+LLM_SEMAFORO = asyncio.Semaphore(get_llm_config().max_concurrencia)
 
 
 def _crear_cliente() -> ChatOpenAI:
-    """Devuelve el cliente ChatOpenAI (singleton a nivel módulo)."""
+    """Devuelve el cliente ChatOpenAI (singleton a nivel módulo).
+
+    Los parámetros (model, base_url, temperature, max_tokens, max_retries,
+    timeout) se leen de ``src/config/model.yaml`` con override por env var.
+    """
     global _llm
     if _llm is None:
+        cfg = get_llm_config()
         _llm = ChatOpenAI(
-            model=os.getenv("MODEL_FRAUD", "deepseek/deepseek-v4-pro"),
+            model=cfg.model,
             api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url="https://openrouter.ai/api/v1",
-            temperature=0,
-            max_tokens=2048,
-            max_retries=3,
-            timeout=30,
+            base_url=cfg.base_url,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            max_retries=cfg.max_retries,
+            timeout=cfg.timeout_seconds,
         )
         os.environ["OPENAI_API_KEY"] = os.getenv("OPENROUTER_API_KEY", "")
     return _llm
@@ -230,12 +184,12 @@ async def llm_classify(state: CaseState) -> CaseState:
         return str(contenido)
 
     try:
-        contenido = await _invocar()
-        analisis = _parsear_analisis(contenido)
-        if analisis is None:
-            # Un reintento: respuestas no interpretables suelen ser transitorias.
+        analisis = None
+        for _ in range(get_llm_config().intentos_parsing):
             contenido = await _invocar()
             analisis = _parsear_analisis(contenido)
+            if analisis is not None:
+                break
     except Exception as e:
         logger.warning("llm_classify: fallo LLM en %s: %s", state.get("case_id"), e)
         analisis = None

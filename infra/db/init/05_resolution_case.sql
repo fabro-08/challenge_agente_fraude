@@ -1,4 +1,4 @@
--- 05_analisis_casos.sql
+-- 05_resolution_case.sql
 -- Tabla `resolution_case`: TODOS los resultados por caso (capa 3 de 3).
 -- Separa la salida del pipeline de los datos crudos (`cases`) y de las
 -- features (`features`).

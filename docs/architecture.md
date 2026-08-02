@@ -88,8 +88,10 @@ apply_rules           ← motor genérico (src/rules/, reglas versionadas en DB)
 ```
 
 > Decisión discreta y determinista por jerarquía de reglas (no score continuo).
-> El LLM solo interviene en casos ambiguos y su veredicto estructurado queda en
-> `analisis_casos.llm_resultado`.
+> El LLM interviene en casos ambiguos (decide APROBAR/RECHAZAR/ESCALAR) y en los
+> escalados forzosos (aporta análisis, pero la decisión queda forzada a `ESCALAR`
+> con `fuente='reglas'`). Su veredicto estructurado queda en
+> `resolution_case.llm_resultado`.
 
 ## Reglas heurísticas (resumen — detalle en step 03)
 
@@ -103,6 +105,22 @@ apply_rules           ← motor genérico (src/rules/, reglas versionadas en DB)
 | R6 | flags=0 + comp_ratio < 0.8 + GPS ok + < 2 reclamos | APROBAR |
 | R7 | GPS ok + entrega no demorada + comp_ratio < 1.0 + antigüedad > 90d | APROBAR |
 | — | resto | ESCALAR (con LLM para texto) |
+
+## Configuración del modelo LLM
+
+Los parámetros del LLM de decisión (cliente de `llm_classify`) viven en
+`src/config/model.yaml` (fuente de verdad, no secretos) con override por env
+var (12-factor): `MODEL_FRAUD`, `LLM_BASE_URL`, `LLM_TEMPERATURE`,
+`LLM_MAX_TOKENS`, `LLM_MAX_RETRIES`, `LLM_TIMEOUT_SECONDS`,
+`LLM_MAX_CONCURRENCIA`, `LLM_INTENTOS_PARSING`. La API key se inyecta desde
+`.env` (`OPENROUTER_API_KEY`), nunca en el YAML.
+
+- Carga tipada y validada con pydantic: `src/config/settings.py` →
+  `get_llm_config()` (singleton cacheado) y `load_llm_config(path)`.
+- Prompts editables sin código: `src/config/prompts/llm_system.txt` (instrucciones
+  + señales canónicas) y `src/config/prompts/llm_examples.md` (3 few-shot), con
+  rutas configurables (`LLM_PROMPT_FILE` / `LLM_EXAMPLES_FILE`).
+- Referencia de env vars: `.env.example`.
 
 ## Infraestructura Docker
 

@@ -39,7 +39,9 @@ def generate_output(state: CaseState) -> CaseState:
     state["decision_llm"] = state.get("decision_llm")
 
     # Asegurar que las justificaciones no sean excesivamente largas.
-    state["justificacion_regla"] = _truncar(state.get("justificacion_regla", ""))
+    # justificacion_regla es multilínea (bloque por regla con su explicación),
+    # por eso tolera un poco más de longitud que el resto.
+    state["justificacion_regla"] = _truncar(state.get("justificacion_regla", ""), 1200)
     if state.get("justificacion_llm"):
         state["justificacion_llm"] = _truncar(state["justificacion_llm"])
     state["justification"] = _truncar(state.get("justification", ""))
