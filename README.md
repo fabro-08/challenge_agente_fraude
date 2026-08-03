@@ -12,7 +12,8 @@ en lugar de 15-25 minutos.
 
 ## Despliegue paso a paso
 
-Dos caminos, según lo que quieras hacer:
+Corre igual en **macOS, Linux y Windows** (Docker Desktop + WSL2). Dos caminos,
+según lo que quieras hacer:
 
 | Quieres… | Camino |
 |---|---|
@@ -21,23 +22,24 @@ Dos caminos, según lo que quieras hacer:
 
 ### A · Agente con UI (Docker)
 
-Levanta los 3 servicios (PostgreSQL 16 + FastAPI + Streamlit) con el seed
-automático de los 250 casos ya analizados. No hace falta Python en la máquina.
+Levanta los 3 servicios (PostgreSQL 16 + FastAPI + Streamlit) y garantiza los
+250 casos ya analizados en la base. No hace falta Python en la máquina.
+Soporta **macOS, Linux y Windows** (Docker Desktop + WSL2).
 
 **Requisitos:** Docker + Docker Compose v2.
 
 ```bash
 # 1. Obtener el código
-git clone <url-del-repo> && cd case3_project
+git clone https://github.com/fabro-08/challenge_agente_fraude.git && cd challenge_agente_fraude
 
 # 2. Crear credenciales del LLM (obligatorio: no están en el repo)
 cp .env.example .env        # completar OPENROUTER_API_KEY=sk-or-v1-...
 #   Sin key la UI y los casos ya sembrados cargan, pero el re-análisis LLM degrada.
 
-# 3. Levantar DB + API + UI (seed automático)
+# 3. Levantar DB + API + UI (seed garantizado: esquema + 250 casos)
 make up
-#   En un volumen nuevo, PostgreSQL ejecuta infra/db/init/*.sql en orden y
-#   siembra los 250 casos ya analizados (sin pasos extra).
+#   En un volumen nuevo PostgreSQL siembra solo; `make up` además corre
+#   `make seed`, que repuebla la base si quedó vacía (idempotente: no duplica).
 
 # 4. Abrir la UI
 #   http://localhost:8501
@@ -53,6 +55,19 @@ Accesos: UI Streamlit http://localhost:8501 · API FastAPI http://localhost:8000
 > estado final del análisis (`infra/db/init/09_seed_completo.sql`), así que no
 > hace falta correr el pipeline al levantar.
 
+#### Por sistema operativo
+
+- **macOS / Linux:** los comandos `make up`, `make seed`, `make psql` funcionan
+  tal cual. En Linux, si `make` no está instalado: `sudo apt install make`
+  (o usa los comandos `docker compose` de la fila Windows).
+- **Windows:** se recomienda **WSL2** (Ubuntu) con Docker Desktop integrado:
+  dentro de Ubuntu se siguen los pasos de macOS/Linux. Sin WSL, en **PowerShell**
+  usa los equivalentes (no hay `make`):
+  - Levantar + seed → `docker compose -f infra/docker-compose.yml up -d --wait`
+  - Si la base quedó vacía → `docker compose -f infra/docker-compose.yml exec -T db psql -U rappi -d rappi_cases -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/09_seed_completo.sql`
+  - Consola psql → `docker compose -f infra/docker-compose.yml exec db psql -U rappi -d rappi_cases`
+  - Reset con base limpia → `docker compose -f infra/docker-compose.yml down -v`
+
 ### B · Notebooks (entorno local con uv)
 
 Ejecuta las notebooks de `notebooks/` (EDA, features, reglas, sintéticos,
@@ -63,15 +78,16 @@ pipeline) con un entorno Python reproducible vía `uv`.
 ```bash
 # 1. Instalar uv (una vez por máquina)
 curl -LsSf https://astral.sh/uv/install.sh | sh    # macOS/Linux · o: brew install uv
+#   Windows (PowerShell): irm https://astral.sh/uv/install.ps1 | iex
 
 # 2. Obtener el código (si aún no lo clonaste)
-git clone <url-del-repo> && cd case3_project
+git clone https://github.com/fabro-08/challenge_agente_fraude.git && cd challenge_agente_fraude
 
 # 3. Crear el .venv e instalar las dependencias del repo
 uv sync
 
 # 4. Activar el entorno
-source .venv/bin/activate
+source .venv/bin/activate           # Windows: .venv\Scripts\Activate.ps1
 
 # 5. Abrir Jupyter y ejecutar las notebooks
 jupyter lab                 # luego abrir notebooks/01_eda.ipynb, 02_features.ipynb, …
@@ -79,6 +95,10 @@ jupyter lab                 # luego abrir notebooks/01_eda.ipynb, 02_features.ip
 # 6. (Alternativa) Ejecutar una notebook sin abrir el navegador
 uv run jupyter nbconvert --to notebook --execute notebooks/01_eda.ipynb
 ```
+
+> En cualquier SO puedes usar `uv run jupyter lab` en vez de activar el entorno
+> (no hace falta `source`/`Activate`). `uv sync`, `jupyter` y las notebooks son
+> cross-platform.
 
 Notas:
 
@@ -90,6 +110,9 @@ Notas:
 
 ### Notas comunes
 
+- **Datos garantizados:** si la base queda sin datos (p. ej. volumen creado
+  antes de que existiera el seed), `make up` corre `make seed`, que aplica el
+  esquema y carga los 250 casos solo si `cases` está vacía (idempotente).
 - `./init.sh` y `pytest tests/ -q` (55 passed) verifican lint, typecheck y tests;
   necesitan el entorno local del camino B (**no son necesarios** para correr el agente por Docker).
 - La **API es interna** (`api:8000`, sin puerto mapeado al host): la UI se comunica
@@ -130,8 +153,8 @@ Notas:
 | **UI (Streamlit)** | Dashboard de KPIs, explorador de casos por origen, políticas, documentación, descarga de entregables |
 | **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados con decisión, justificación y señales |
 
-**Resultado sobre los 250 casos:** APROBAR 73 · RECHAZAR 117 · ESCALAR 60.
-Sobre los **150 casos originales**: APROBAR 51 · RECHAZAR 68 · ESCALAR 31
+**Resultado sobre los 250 casos:** APROBAR 105 · RECHAZAR 100 · ESCALAR 45.
+Sobre los **150 casos originales**: APROBAR 65 · RECHAZAR 58 · ESCALAR 27
 (ver `data/150casos_analizados.xlsx`).
 
 > La distribución exacta puede variar con reprocesos (el batch re-analyza casos).
@@ -265,7 +288,7 @@ procesar; `backfill_features.py` solo es un respaldo sanitizador (migración 3-c
 ## Estructura del repositorio
 
 ```
-case3_project/
+challenge_agente_fraude/(raíz del repo)
 ├── init.sh                → verificación de entorno (lint, tests, healthchecks)
 ├── Makefile               → up / down / psql / seed
 ├── CHECKPOINTS.md         → criterios objetivos del estado final

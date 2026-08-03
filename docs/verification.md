@@ -110,7 +110,7 @@ curl -s -X POST http://localhost:8000/analyze -H "Content-Type: application/json
 - [ ] `POST /analyze/batch` → procesa todos los casos de la DB
 - [ ] `POST /analyze/batch {"persistir": false}` (modo demo) → corre el pipeline **sin escribir** en `resolution_case` (contar filas antes/después); las filas demo quedan en `batch_run_items.fila_demo`
 - [ ] `POST /analyze/batch {"aleatorio": true, "limite": 5}` → muestreo aleatorio
-- [ ] `GET /export/excel` → Excel de 150 casos (magic `PK`, 28 columnas, distribución 56/63/31)
+- [ ] `GET /export/excel` → Excel de 150 casos (magic `PK`, 28 columnas, distribución 65/58/27)
 - [ ] `GET /export/excel?es_sintetico=true` → Excel de 250 casos
 - [ ] `GET /export/politicas` → 200, `text/markdown`, contiene "Políticas"
 - [ ] `GET /jobs/{id}/resultados` y `GET /jobs/{id}/excel` → filas y Excel del job demo

@@ -176,7 +176,7 @@ inyecta desde `.env` (`OPENROUTER_API_KEY`), nunca en el YAML.
   La API y el CLI (`scripts/run_batch.py`) comparten el MISMO worker
   (`src/batch/worker.py`); `persistir_resolucion` es la fuente única del
   `INSERT ... ON CONFLICT` (antes duplicado en 3 sitios). El entrypoint unifica
-  los antiguos `batch_process.py` / `batch_chunk.py`.
+  los antiguos `batch_process.py` / `batch_chunk.py` (eliminados).
 - **Datos sintéticos:** 100 casos generados por muestreo empírico + jitter
   gaussiano y descripciones con LLM (notebook `05_synthetic.ipynb`), validados con
   KS-test y chi-cuadrado, marcados con `es_sintetico=TRUE`.

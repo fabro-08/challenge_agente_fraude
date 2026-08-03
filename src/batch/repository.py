@@ -2,9 +2,9 @@
 
 Centraliza todo el SQL del batch: cabecera ``batch_runs``, items
 ``batch_run_items`` y la persistencia consolidada de resultados
-(``persistir_resolucion``). Reemplaza la triple duplicación de ``INSERT ...
-ON CONFLICT`` que existía en ``api/services.py``, ``pipeline/batch_process.py``
-y ``pipeline/batch_chunk.py``.
+(``persistir_resolucion``). Reemplaza la duplicación de ``INSERT ...
+ON CONFLICT`` que existía en ``api/services.py`` y en los antiguos scripts
+batch (eliminados; el entrypoint actual es ``scripts/run_batch.py``).
 
 La conexión se abre y cierra por operación (worker y API son efímeros).
 """

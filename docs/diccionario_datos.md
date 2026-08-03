@@ -117,11 +117,11 @@ con el contrato separado por origen (reglas vs LLM).
 
 | Decisión | Casos | % |
 |---|---|---|
-| APROBAR | 82 | 32.8% |
-| RECHAZAR | 107 | 42.8% |
-| ESCALAR | 61 | 24.4% |
+| APROBAR | 105 | 42.0% |
+| RECHAZAR | 100 | 40.0% |
+| ESCALAR | 45 | 18.0% |
 
-Sobre los **150 casos originales**: APROBAR 56 · RECHAZAR 63 · ESCALAR 31
+Sobre los **150 casos originales**: APROBAR 65 · RECHAZAR 58 · ESCALAR 27
 (`data/150casos_analizados.xlsx`).
 
 > La distribución exacta varía con reprocesos (el batch re-analyza casos); estas

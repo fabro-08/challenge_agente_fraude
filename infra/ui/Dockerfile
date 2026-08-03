@@ -2,7 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir streamlit pandas plotly httpx
+RUN pip install --no-cache-dir --retries 10 --timeout 300 \
+    streamlit==1.60.0 \
+    pandas==3.0.5 \
+    plotly==6.9.0 \
+    httpx==0.28.1
 
 COPY src/ /app/src
 COPY docs/politicas_decision.md /app/docs/politicas_decision.md
