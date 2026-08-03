@@ -10,96 +10,6 @@ en lugar de 15-25 minutos.
 
 ---
 
-## Índice — Dónde encontrar cada cosa
-
-| Necesito | Dónde |
-|---|---|
-| Entender la solución y arrancar | `README.md` (abajo: Despliegue paso a paso) |
-| Criterios de decisión (qué y por qué) | `docs/politicas_decision.md` |
-| Cambiar / crear reglas (cómo) | `docs/reglas_operacion.md` |
-| Arquitectura y flujo del agente | `docs/architecture.md` |
-| Variables y features del dataset | `docs/diccionario_datos.md` |
-| Análisis exploratorio del dataset (EDA) | `docs/reporte_eda.md` |
-| Cómo verificar cada step | `docs/verification.md` |
-| Convenciones de código | `docs/conventions.md` |
-| Auto-evaluación del estado final | `CHECKPOINTS.md` |
-| Mapa interno de navegación (agentes) | `AGENTS.md` |
-
----
-
-## Resumen de la solución
-
-| Componente | Qué hace |
-|---|---|
-| **Pipeline LangGraph** | `load_case → features → reglas → LLM → decisión final` |
-| **Motor de reglas (YAML)** | 11 reglas en `src/rules/thresholds.yaml` (RuleEngine), usadas por el flujo del agente |
-| **LLM estructurado** | Analiza la descripción del reclamo en casos ambiguos y emite veredicto + señales explicadas |
-| **API REST (FastAPI)** | `/analyze`, `/analyze/batch`, `/cases`, `/stats`, `/export/*` |
-| **UI (Streamlit)** | Dashboard de KPIs, explorador de casos por origen, políticas, documentación, descarga de entregables |
-| **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados con decisión, justificación y señales |
-
-**Resultado sobre los 250 casos:** APROBAR 73 · RECHAZAR 117 · ESCALAR 60.
-Sobre los **150 casos originales**: APROBAR 51 · RECHAZAR 68 · ESCALAR 31
-(ver `data/150casos_analizados.xlsx`).
-
-> La distribución exacta puede variar con reprocesos (el batch re-analyza casos).
-> Estas cifras corresponden al estado actual de `resolution_case`.
-
-**Stack:** Python 3.12 · LangGraph · FastAPI · Streamlit · PostgreSQL 16 · Docker ·
-Playwright/pytest (55 passed).
-
----
-
-## Decisiones de negocio clave
-
-1. **Sin modelo ML:** el dataset es pequeño (150 casos). Se usan **reglas heurísticas**
-   (documentadas en `docs/politicas_decision.md`) + **LLM para texto libre** en casos
-   ambiguos y en escalados forzosos (aportando análisis, sin poder cambiar la decisión).
-2. **ESCALAR no es un default:** solo se escala cuando hay ambigüedad real; el escalado
-   forzoso (palabras críticas de marca) es una decisión explícita de seguridad que pasa
-   por el LLM pero conserva `fuente='reglas'`.
-3. **Reglas desde thresholds.yaml:** el flujo del agente usa el motor `RuleEngine`
-   con umbrales en `src/rules/thresholds.yaml` (documentado en
-   `docs/politicas_decision.md`). No hay reglas gestionadas en base de datos.
-
-4. **Cómo cambiar/crear reglas:** guía operativa paso a paso en
-   `docs/reglas_operacion.md` (umbrales, condiciones, palabras críticas, reproceso).
-5. **No se escribe en `recomendacion_agente`:** el `Dataset_caso_3.xlsx` original
-   se mantiene **read-only**; la decisión vive en `resolution_case` y se entrega en
-   el Excel derivado `data/150casos_analizados.xlsx` (columna `recomendacion`).
-
----
-
-## Arquitectura
-
-```
-Agente CS (humano) ── HTTP :8501 ──► Streamlit UI
-                                        │  HTTP :8000
-                                        ▼
-                                  FastAPI (src/api/)
-                                        │
-                                        ▼
-                            LangGraph Pipeline (src/pipeline/)
-                  load_case → features → apply_rules
-                         │                     │
-                         │  regla APROBAR ──────┴──► decision: APROBAR
-                         │  regla RECHAZAR ─────────► decision: RECHAZAR
-                         │  ESCALAR forzoso ─────────► decision: ESCALAR (fuente=reglas)
-                         │  AMBIGUO ──► llm_classify ──► decision: APROBAR|RECHAZAR|ESCALAR (fuente=llm)
-                                        │  SQL :5432
-                                        ▼
-                               PostgreSQL 16 (infra/db/)
-                     cases · features · resolution_case
-```
-
-Flujo de decisión: reglas **RECHAZAR** primero (prevenir fraude), luego **APROBAR**
-(no penalizar legítimos). Lo que queda **AMBIGUO** lo decide el LLM; un **ESCALAR
-forzoso** (palabras críticas) pasa por el LLM solo para aportar análisis, pero la
-decisión final queda en `ESCALAR` con `fuente='reglas'`. Detalle en
-`docs/architecture.md` y `docs/politicas_decision.md`.
-
----
-
 ## Despliegue paso a paso
 
 Dos caminos, según lo que quieras hacer:
@@ -191,6 +101,98 @@ Notas:
   (borra el volumen `pgdata` y vuelve a ejecutar el seed al levantar).
 
 ---
+
+## Índice — Dónde encontrar cada cosa
+
+| Necesito | Dónde |
+|---|---|
+| Entender la solución y arrancar | `README.md` (arriba: Despliegue paso a paso) |
+| Criterios de decisión (qué y por qué) | `docs/politicas_decision.md` |
+| Cambiar / crear reglas (cómo) | `docs/reglas_operacion.md` |
+| Arquitectura y flujo del agente | `docs/architecture.md` |
+| Variables y features del dataset | `docs/diccionario_datos.md` |
+| Análisis exploratorio del dataset (EDA) | `docs/reporte_eda.md` |
+| Cómo verificar cada step | `docs/verification.md` |
+| Convenciones de código | `docs/conventions.md` |
+| Auto-evaluación del estado final | `CHECKPOINTS.md` |
+| Mapa interno de navegación (agentes) | `AGENTS.md` |
+
+---
+
+## Resumen de la solución
+
+| Componente | Qué hace |
+|---|---|
+| **Pipeline LangGraph** | `load_case → features → reglas → LLM → decisión final` |
+| **Motor de reglas (YAML)** | 11 reglas en `src/rules/thresholds.yaml` (RuleEngine), usadas por el flujo del agente |
+| **LLM estructurado** | Analiza la descripción del reclamo en casos ambiguos y emite veredicto + señales explicadas |
+| **API REST (FastAPI)** | `/analyze`, `/analyze/batch`, `/cases`, `/stats`, `/export/*` |
+| **UI (Streamlit)** | Dashboard de KPIs, explorador de casos por origen, políticas, documentación, descarga de entregables |
+| **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados con decisión, justificación y señales |
+
+**Resultado sobre los 250 casos:** APROBAR 73 · RECHAZAR 117 · ESCALAR 60.
+Sobre los **150 casos originales**: APROBAR 51 · RECHAZAR 68 · ESCALAR 31
+(ver `data/150casos_analizados.xlsx`).
+
+> La distribución exacta puede variar con reprocesos (el batch re-analyza casos).
+> Estas cifras corresponden al estado actual de `resolution_case`.
+
+**Stack:** Python 3.12 · LangGraph · FastAPI · Streamlit · PostgreSQL 16 · Docker ·
+Playwright/pytest (55 passed).
+
+---
+
+## Decisiones de negocio clave
+
+1. **Sin modelo ML:** el dataset es pequeño (150 casos). Se usan **reglas heurísticas**
+   (documentadas en `docs/politicas_decision.md`) + **LLM para texto libre** en casos
+   ambiguos y en escalados forzosos (aportando análisis, sin poder cambiar la decisión).
+2. **ESCALAR no es un default:** solo se escala cuando hay ambigüedad real; el escalado
+   forzoso (palabras críticas de marca) es una decisión explícita de seguridad que pasa
+   por el LLM pero conserva `fuente='reglas'`.
+3. **Reglas desde thresholds.yaml:** el flujo del agente usa el motor `RuleEngine`
+   con umbrales en `src/rules/thresholds.yaml` (documentado en
+   `docs/politicas_decision.md`). No hay reglas gestionadas en base de datos.
+
+4. **Cómo cambiar/crear reglas:** guía operativa paso a paso en
+   `docs/reglas_operacion.md` (umbrales, condiciones, palabras críticas, reproceso).
+5. **No se escribe en `recomendacion_agente`:** el `Dataset_caso_3.xlsx` original
+   se mantiene **read-only**; la decisión vive en `resolution_case` y se entrega en
+   el Excel derivado `data/150casos_analizados.xlsx` (columna `recomendacion`).
+
+---
+
+## Arquitectura
+
+```
+Agente CS (humano) ── HTTP :8501 ──► Streamlit UI
+                                        │  HTTP :8000
+                                        ▼
+                                  FastAPI (src/api/)
+                                        │
+                                        ▼
+                            LangGraph Pipeline (src/pipeline/)
+                  load_case → features → apply_rules
+                         │                     │
+                         │  regla APROBAR ──────┴──► decision: APROBAR
+                         │  regla RECHAZAR ─────────► decision: RECHAZAR
+                         │  ESCALAR forzoso ─────────► decision: ESCALAR (fuente=reglas)
+                         │  AMBIGUO ──► llm_classify ──► decision: APROBAR|RECHAZAR|ESCALAR (fuente=llm)
+                                        │  SQL :5432
+                                        ▼
+                               PostgreSQL 16 (infra/db/)
+                     cases · features · resolution_case
+```
+
+Flujo de decisión: reglas **RECHAZAR** primero (prevenir fraude), luego **APROBAR**
+(no penalizar legítimos). Lo que queda **AMBIGUO** lo decide el LLM; un **ESCALAR
+forzoso** (palabras críticas) pasa por el LLM solo para aportar análisis, pero la
+decisión final queda en `ESCALAR` con `fuente='reglas'`. Detalle en
+`docs/architecture.md` y `docs/politicas_decision.md`.
+
+---
+
+
 
 ## Export de entregables (API)
 
