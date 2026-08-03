@@ -15,7 +15,7 @@
 - [ ] **06-Pipeline:** grafo compila, invoke retorna `decision` + `fuente` + `decision_regla`/`decision_llm` + `senales_regla`/`senales_llm` + `justificacion_regla`/`justificacion_llm`
 - [ ] **07-API:** `/health` 200, `/analyze/batch` persiste resultados, OpenAPI en `/docs`
 - [ ] **08-UI:** dashboard con KPIs, filtros funcionales, detalle de caso legible
-- [ ] **09-Testing:** 90 tests pasan (unitarios + API + E2E Playwright), reportes HTML y MD en `log_review/`
+- [ ] **09-Testing:** 55 tests pasan (unitarios + API + E2E Playwright), reportes HTML y MD en `log_review/`
 
 ## Proyecto completo
 
@@ -26,3 +26,4 @@
 - [ ] `@reviewer` ejecutado → sin hallazgos críticos abiertos en `log_review/`
 - [ ] Demo: `docker compose up` levanta todo y la UI muestra los casos analizados
 - [ ] `.harness/history.md` tiene entrada por cada step completado
+- [ ] **Robustez:** reglas degradan sin crash, LLM con circuit breaker + timeouts, `resolution_case.fallback` poblado al degradar

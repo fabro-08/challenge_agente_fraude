@@ -1,6 +1,6 @@
 # Diccionario de datos — Caso 3: Revisión de Compensaciones
 
-> Dataset `casos` en PostgreSQL. 42 columnas, 250 filas (150 originales + 100 sintéticas).
+> Dataset `casos` en PostgreSQL. `cases` = 18 columnas, 250 filas (150 originales + 100 sintéticas); con features y `resolution_case` el modelo completo suma ~42 columnas.
 
 ---
 
@@ -23,6 +23,18 @@
 | `flags_fraude_previos` | INTEGER | Veces que este usuario fue marcado por fraude antes | 0, 1, 2, 3, 4 |
 | `motivo_reclamo` | TEXT | Motivo declarado por el usuario | **7 motivos** (ver abajo) |
 | `descripcion_reclamo` | TEXT | Texto libre del reclamo | Ej: *"La app dice que fue entregado pero no recibí nada. Estuve en casa todo el día."* |
+| `recomendacion_agente` | TEXT | Columna de recomendación en el Excel fuente | **Vacía — no poblada por diseño** (ver Nota) |
+
+> ### Nota de diseño — Por qué no se llena `recomendacion_agente`
+>
+> La decisión del agente **no se escribe en el `Dataset_caso_3.xlsx` original**:
+> el archivo fuente se trata como input **read-only** para preservar integridad y
+> reproducibilidad. La recomendación vive en `resolution_case.decision`
+> (PostgreSQL) y el entregable es un **Excel derivado**
+> (`data/150casos_analizados.xlsx`) con la columna `recomendacion`, justificación
+> y señales separadas por origen (reglas vs LLM). Ese contrato separado
+> (`decision_regla`/`decision_llm`, `justificacion_*`, `senales_*`) no cabe en una
+> columna única del dataset original.
 
 ### Valores únicos de campos categóricos
 
@@ -97,19 +109,23 @@ con el contrato separado por origen (reglas vs LLM).
 | `justificacion_llm` | TEXT | Justificación del LLM sin prefijo de decisión |
 | `senales_regla` | TEXT | Señales de reglas `campo operador umbral = valor real`, separadas por `\|` |
 | `senales_llm` | TEXT | Señales canónicas del LLM (snake_case), separadas por `\|` |
-| `reglas_checklist` | JSONB | Checklist por regla: `{regla_id, version, nombre, tipo_regla, se_disparo, detalle, condiciones}` |
-| `llm_resultado` | JSONB | Análisis del LLM: `{resumen, veredicto, señales_explicadas[{señal, explicacion, peso}]}` |
+| `reglas_checklist` | JSONB | Checklist por regla (solo motor en DB). Con reglas desde `thresholds.yaml` queda `[]` |
+| `llm_resultado` | JSONB | Análisis del LLM: `{resumen, veredicto, señales_explicadas[{señal, explicacion, peso}], error?}` (`error` presente si hubo fallback del LLM: `provider_error`/`parsing`/`circuit_open`) |
+| `fallback` | TEXT | Motivo(s) de degradación del agente (`reglas_yaml`, `llm_circuit_open`, `llm_provider_error`, `llm_parsing`, ...), separados por `\|`. `NULL` si no hubo fallback |
 
 ### Distribución de decisiones (250 casos: 150 originales + 100 sintéticos)
 
 | Decisión | Casos | % |
 |---|---|---|
-| APROBAR | 103 | 41.2% |
-| RECHAZAR | 101 | 40.4% |
-| ESCALAR | 46 | 18.4% |
+| APROBAR | 82 | 32.8% |
+| RECHAZAR | 107 | 42.8% |
+| ESCALAR | 61 | 24.4% |
 
-Sobre los **150 casos originales**: APROBAR 67 · RECHAZAR 57 · ESCALAR 26
+Sobre los **150 casos originales**: APROBAR 56 · RECHAZAR 63 · ESCALAR 31
 (`data/150casos_analizados.xlsx`).
+
+> La distribución exacta varía con reprocesos (el batch re-analyza casos); estas
+> cifras corresponden al estado actual de `resolution_case`.
 
 ---
 

@@ -12,7 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api import services
-from src.api.routers import cases, rules, users
+from src.api.routers import cases, export
+from src.batch.repository import recuperar_runs_huerfanos
 from src.pipeline.graph import build_graph
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicializa el grafo LangGraph al arrancar el servidor."""
+    """Inicializa el grafo LangGraph y recupera batches huérfanos al arrancar."""
     load_dotenv()
     try:
         graph = build_graph()
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI):
         logger.info("Grafo LangGraph compilado correctamente")
     except Exception as e:
         logger.error("Error al compilar el grafo: %s", e)
+    try:
+        recuperados = recuperar_runs_huerfanos()
+        if recuperados:
+            logger.info("Recuperados %s run(s) batch huérfano(s) tras reinicio", recuperados)
+    except Exception as e:
+        logger.error("No se pudieron recuperar batches huérfanos: %s", e)
     yield
 
 
@@ -54,5 +61,4 @@ app.add_middleware(
 )
 
 app.include_router(cases.router)
-app.include_router(rules.router)
-app.include_router(users.router)
+app.include_router(export.router)

@@ -43,30 +43,6 @@ def post(path: str, json: dict[str, Any] | None = None) -> Any | None:
         return None
 
 
-def put(path: str, json: dict[str, Any] | None = None) -> Any | None:
-    """PUT genérico a la API."""
-    try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            resp = client.put(f"{API_URL}{path}", json=json)
-            resp.raise_for_status()
-            return resp.json()
-    except httpx.HTTPError as exc:
-        _handle_error(f"PUT {path}: {exc}")
-        return None
-
-
-def delete(path: str, json: dict[str, Any] | None = None) -> Any | None:
-    """DELETE genérico a la API."""
-    try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            resp = client.request("DELETE", f"{API_URL}{path}", json=json)
-            resp.raise_for_status()
-            return resp.json()
-    except httpx.HTTPError as exc:
-        _handle_error(f"DELETE {path}: {exc}")
-        return None
-
-
 # ── Conveniencia ───────────────────────────────────────────────────────
 
 
@@ -90,36 +66,6 @@ def get_case_detail(case_id: str) -> Any | None:
     return get(f"/cases/{case_id}")
 
 
-def get_rules() -> Any | None:
-    """Lista de todas las reglas activas/inactivas."""
-    return get("/rules")
-
-
-def get_rule_detail(regla_id: str) -> Any | None:
-    """Detalle de una regla."""
-    return get(f"/rules/{regla_id}")
-
-
-def get_rule_versions(regla_id: str) -> Any | None:
-    """Historial de versiones de una regla."""
-    return get(f"/rules/{regla_id}/versions")
-
-
-def get_campos() -> Any | None:
-    """Campos y operadores disponibles para construir condiciones."""
-    return get("/rules/campos")
-
-
-def simulate_rules(payload: dict[str, Any]) -> Any | None:
-    """Simula el impacto de un cambio (sin persistir)."""
-    return post("/rules/simulate", json=payload)
-
-
-def get_users() -> Any | None:
-    """Lista de analistas/usuarios del sistema."""
-    return get("/users")
-
-
 def analyze_case(case_id: str) -> Any | None:
     """Ejecuta el pipeline de análisis sobre un caso.
 
@@ -140,19 +86,78 @@ def analyze_batch(
     es_sintetico: bool | None = None,
     solo_pendientes: bool = False,
     limite: int | None = None,
+    case_ids: list[str] | None = None,
+    aleatorio: bool = False,
+    persistir: bool = True,
 ) -> Any | None:
-    """Lanza un procesamiento batch en background."""
+    """Lanza un procesamiento batch en background.
+
+    Args:
+        case_ids: Selección manual de casos (ignora filtros).
+        aleatorio: Muestreo aleatorio de ``limite`` casos.
+        persistir: ``False`` corre en memoria (demo) sin tocar la DB.
+    """
     payload: dict[str, Any] = {"solo_pendientes": solo_pendientes}
     if es_sintetico is not None:
         payload["es_sintetico"] = es_sintetico
     if limite is not None:
         payload["limite"] = limite
+    if case_ids:
+        payload["case_ids"] = case_ids
+    payload["aleatorio"] = aleatorio
+    payload["persistir"] = persistir
     return post("/analyze/batch", json=payload)
 
 
 def get_job_status(job_id: str) -> Any | None:
     """Consulta el estado de un job batch."""
     return get(f"/jobs/{job_id}")
+
+
+def get_job_resultados(job_id: str) -> Any | None:
+    """Filas del job demo (modo memoria, sin persistir)."""
+    return get(f"/jobs/{job_id}/resultados")
+
+
+def download_excel(es_sintetico: bool = False) -> tuple[str, bytes] | None:
+    """Descarga el Excel de casos analizados (bytes en memoria).
+
+    Returns:
+        Tupla (nombre_archivo, contenido) o None si falla.
+    """
+    nombre = "250casos_analizados.xlsx" if es_sintetico else "150casos_analizados.xlsx"
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.get(f"{API_URL}/export/excel", params={"es_sintetico": es_sintetico})
+            resp.raise_for_status()
+            return nombre, resp.content
+    except httpx.HTTPError as exc:
+        _handle_error(f"GET /export/excel: {exc}")
+        return None
+
+
+def download_politicas() -> tuple[str, str] | None:
+    """Descarga las políticas de decisión (markdown)."""
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.get(f"{API_URL}/export/politicas")
+            resp.raise_for_status()
+            return "politicas_decision.md", resp.text
+    except httpx.HTTPError as exc:
+        _handle_error(f"GET /export/politicas: {exc}")
+        return None
+
+
+def descargar_excel_job(job_id: str) -> tuple[str, bytes] | None:
+    """Descarga el Excel del job demo (modo memoria)."""
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.get(f"{API_URL}/jobs/{job_id}/excel")
+            resp.raise_for_status()
+            return f"demo_batch_{job_id}.xlsx", resp.content
+    except httpx.HTTPError as exc:
+        _handle_error(f"GET /jobs/{job_id}/excel: {exc}")
+        return None
 
 
 def health_check() -> Any | None:

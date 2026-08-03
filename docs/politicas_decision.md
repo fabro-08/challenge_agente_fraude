@@ -4,10 +4,9 @@
 > **APROBAR**, **RECHAZAR** o **ESCALAR** cada caso de compensación.
 >
 > Los thresholds numéricos se derivaron del análisis exploratorio (EDA) sobre
-> 150 casos originales. Desde el step 06b viven **versionados en PostgreSQL**
-> (`configuracion_reglas` / `reglas_versiones`) y se editan desde la UI sin código.
-> `src/rules/thresholds.yaml` es solo el seed de bootstrap para entornos nuevos
-> (`python -m src.rules.seed_reglas`).
+> 150 casos originales y viven en **`src/rules/thresholds.yaml`**, que usa el
+> motor `RuleEngine` del flujo del agente (no hay reglas gestionadas en base de
+> datos).
 
 ---
 
@@ -202,25 +201,25 @@ El LLM participa solo para aportar análisis enriquecido
 
 ---
 
-## 7. Justificación con textos preseteado (`explicacion`)
+## 7. Justificación persistida
 
-Cada regla lleva un campo `explicacion` (lenguaje de negocio) en su `config` JSONB,
-gestionado desde la UI junto con el resto de la regla. Es la fuente de verdad para la
-justificación persistida en `resolution_case.justificacion_regla`.
+`resolution_case.justificacion_regla` la genera el motor `RuleEngine` en el nodo
+`apply_rules` (`src/pipeline/nodes/apply_rules.py`), usando exactamente el mismo
+código que decide (`rule_engine.py`). No hay un config de reglas en base de datos
+ni backfill.
 
-Formato persistido, un bloque por regla que disparó (bloques separados por línea en blanco):
+El YAML (`src/rules/thresholds.yaml`) aporta, además del umbral, el campo
+`descripcion` y `explicacion` de cada regla como **referencia de negocio** para
+esta documentación y para el código.
 
-```
-R1 — Usuario con 2 o más flags de fraude previos
-El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.
-```
+---
 
-- La primera línea es `{regla_id} — {descripcion}` y la segunda la `explicacion` de la config.
-- Si una regla no tiene `explicacion`, se persiste solo la cabecera (compatibilidad hacia atrás).
-- La UI renderiza cada bloque con la cabecera en negrita y respeta los saltos de línea.
-- El backfill `scripts/backfill_justificacion_regla.py` re-sincroniza `explicacion` en la versión
-  actual de cada regla y recalcula `justificacion_regla` de los casos ya resueltos por reglas
-  usando exactamente el mismo código del pipeline (sin LLM).
+## 7 bis. Cómo modificar o crear reglas
+
+Los umbrales se cambian en `src/rules/thresholds.yaml` (valores) y la lógica de
+cada condición en `src/rules/rule_engine.py` (código). El detalle completo del
+proceso —cambiar umbrales, agregar condiciones, crear reglas nuevas, agregar
+palabras críticas y re-procesar— está en **`docs/reglas_operacion.md`**.
 
 ---
 

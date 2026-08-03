@@ -112,8 +112,9 @@ def final_decision(state: CaseState) -> CaseState:
         state["final_decision"] = rule_result
         state["decision_regla"] = decision_regla
         state["decision_llm"] = None
-        state["justificacion_regla"] = _justificacion_reglas(
-            state.get("rule_details", []), rule_result
+        state["justificacion_regla"] = (
+            state.get("justificacion_regla")
+            or _justificacion_reglas(state.get("rule_details", []), rule_result)
         )
         state["justificacion_llm"] = None
         state["senales_regla"] = senales_regla
@@ -126,8 +127,9 @@ def final_decision(state: CaseState) -> CaseState:
     if rule_result == "ESCALAR":
         state["final_decision"] = "ESCALAR"
         state["decision_regla"] = "ESCALAR"
-        state["justificacion_regla"] = _justificacion_reglas(
-            state.get("rule_details", []), "ESCALAR"
+        state["justificacion_regla"] = (
+            state.get("justificacion_regla")
+            or _justificacion_reglas(state.get("rule_details", []), "ESCALAR")
         )
         state["justificacion_llm"] = _llm_justificacion(llm)
         state["senales_regla"] = senales_regla

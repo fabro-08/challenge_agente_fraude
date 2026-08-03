@@ -4,12 +4,22 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from src.api import schemas, services
+from src.rules.rule_engine import _cargar_thresholds
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _contar_reglas_yaml() -> int:
+    """Cantidad de reglas definidas en ``thresholds.yaml`` (KPI del dashboard)."""
+    try:
+        t = _cargar_thresholds()
+        return sum(len(v) for k, v in t.items() if isinstance(v, dict))
+    except Exception:
+        return 0
 
 
 def _decimal_a_float(v: Any) -> Any:
@@ -37,10 +47,8 @@ def health():
             cur.fetchone()
             cur.execute("SELECT COUNT(*) AS n FROM cases")
             total_casos = cur.fetchone()["n"]
-            cur.execute("SELECT COUNT(*) AS n FROM configuracion_reglas WHERE activo = TRUE")
-            reglas = cur.fetchone()["n"]
     except Exception as e:
-        return schemas.HealthResponse(status="error", db=str(e), casos=0, reglas_activas=0, grafo="error")
+        return schemas.HealthResponse(status="error", db=str(e), casos=0, reglas_yaml=0, grafo="error")
     finally:
         conn.close()
 
@@ -48,7 +56,7 @@ def health():
         status="ok",
         db="ok",
         casos=total_casos,
-        reglas_activas=reglas,
+        reglas_yaml=_contar_reglas_yaml(),
         grafo="compilado" if services.get_graph() else "no_inicializado",
     )
 
@@ -116,6 +124,37 @@ def get_job(job_id: str):
     return schemas.JobStatus(**job)
 
 
+@router.get("/jobs/{job_id}/resultados")
+def get_job_resultados(job_id: str):
+    """Devuelve las filas del job demo (modo memoria, sin persistir).
+
+    Solo tiene contenido cuando el batch se lanzó con ``persistir=False``.
+    """
+    if services.estado_job(job_id) is None:
+        raise HTTPException(404, f"Job {job_id} no encontrado")
+    filas = services.filas_job(job_id)
+    return {"job_id": job_id, "resultados": filas, "total": len(filas)}
+
+
+@router.get("/jobs/{job_id}/excel")
+def get_job_excel(job_id: str):
+    """Descarga el Excel del job demo (modo memoria, sin escribir en DB)."""
+    if services.estado_job(job_id) is None:
+        raise HTTPException(404, f"Job {job_id} no encontrado")
+    filas = services.filas_job(job_id)
+    if not filas:
+        raise HTTPException(409, "El job no tiene filas (solo aplica a batch demo en memoria)")
+    try:
+        excel = services.excel_filas_bytes(filas)
+    except Exception as e:
+        raise HTTPException(500, f"Error al generar el Excel: {e}") from e
+    return Response(
+        content=excel,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="demo_batch_{job_id}.xlsx"'},
+    )
+
+
 # ── Listado y detalle ─────────────────────────────────────────────────
 
 
@@ -156,6 +195,7 @@ def list_cases(
                 f"""SELECT c.caso_id, c.usuario_id, c.ciudad, c.vertical,
                            c.restaurante,
                            c.valor_orden_mxn, c.compensacion_solicitada_mxn,
+                           c.antiguedad_usuario_dias,
                            c.flags_fraude_previos, c.es_sintetico,
                            a.decision AS recomendacion_agente,
                            a.fuente,
@@ -186,7 +226,7 @@ def get_case(case_id: str):
                            a.senales_llm, a.senales_regla,
                            a.reglas_checklist, a.llm_resultado, a.fuente,
                            a.decision_regla, a.decision_llm,
-                           a.features_version
+                           a.features_version, a.fallback
                     FROM cases c
                     LEFT JOIN features f ON f.caso_id = c.caso_id
                     LEFT JOIN resolution_case a ON a.caso_id = c.caso_id
@@ -243,9 +283,6 @@ def stats():
                 }
                 for r in cur.fetchall()
             ]
-
-            cur.execute("SELECT COUNT(*) AS n FROM configuracion_reglas WHERE activo = TRUE")
-            reglas = cur.fetchone()["n"]
     finally:
         conn.close()
 
@@ -253,5 +290,5 @@ def stats():
         total_casos=total,
         distribucion=distribucion,
         por_origen=por_origen,
-        reglas_activas=reglas,
+        reglas_yaml=_contar_reglas_yaml(),
     )

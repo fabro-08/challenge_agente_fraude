@@ -166,31 +166,9 @@ def test_justificacion_llm_sin_prefijo():
 # ── señales canónicas y formato ──────────────────────────────────────────
 
 
-def test_senal_de_regla_mapeo():
-    assert signals.senal_de_regla("R3") == "alta_frecuencia_reclamos"
-    assert signals.senal_de_regla("ESCALAR-1") == "palabras_criticas_seguridad"
-    assert signals.senal_de_regla("A3") == "gps_confirmada_usuario_antiguo"
-
-
-def test_senal_de_regla_fallback_slug():
-    assert signals.senal_de_regla("R99", "Regla nueva de prueba") == "regla_nueva_de_prueba"
-
-
 def test_normalizar_señal_llm():
     assert signals.normalizar_señal_llm("GPS no confirmada") == "entrega_gps_no_confirmada"
     assert signals.normalizar_señal_llm("Alta frecuencia de reclamos") == "alta_frecuencia_reclamos"
     assert signals.normalizar_señal_llm("Ratio de compensación elevado") == "compensacion_elevada"
     assert signals.normalizar_señal_llm("descripcion_incoherente") == "descripcion_incoherente"
     assert signals.normalizar_señal_llm("algo raro sin definir") == "algo_raro_sin_definir"
-
-
-def test_formato_senal_condicion_numerica():
-    assert signals.formato_senal_condicion("flags_fraude_previos", ">=", 2, 3) == \
-        "flags_fraude_previos >= 2 = 3"
-
-
-def test_formato_senal_condicion_contains_any():
-    # Para contains_any se usan las palabras que matchearon, no el texto completo.
-    assert signals.formato_senal_condicion(
-        "descripcion_reclamo", "contains_any", ["alergi", "policía"], "Me dolió la comida, alergi grave"
-    ) == "descripcion_reclamo contains_any [alergi, policía] = alergi"

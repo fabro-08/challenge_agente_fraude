@@ -11,7 +11,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.ui.api_client import analyze_case, get_case_detail, get_cases, get_rules
+from src.rules.signals import SEÑALES_POSITIVAS
+from src.ui.api_client import analyze_case, get_case_detail, get_cases
 
 COLOR_MAP: dict[str, str] = {
     "APROBAR": "#28a745",
@@ -77,15 +78,6 @@ def _load_cases(**filtros: object) -> dict | None:
 @st.cache_data(ttl=60)
 def _load_case_detail(case_id: str) -> dict | None:
     return get_case_detail(case_id)
-
-
-@st.cache_data(ttl=300)
-def _load_prioridades() -> dict[str, int]:
-    """Mapa regla_id → prioridad (configuracion_reglas) para ordenar el checklist."""
-    reglas = get_rules()
-    if not isinstance(reglas, list):
-        return {}
-    return {r["regla_id"]: int(r["prioridad"]) for r in reglas if r.get("regla_id")}
 
 
 def _color_badge(decision: str) -> str:
@@ -408,11 +400,6 @@ def _render_detail(case_id: str) -> None:
     with st.container(border=True):
         st.markdown(":material/traffic: **Checklist de reglas**")
         if checklist:
-            prioridades = _load_prioridades()
-            checklist = sorted(
-                checklist,
-                key=lambda i: (prioridades.get(i.get("regla_id"), 999), i.get("regla_id", "")),
-            )
             df_check = pd.DataFrame(checklist)
             if not df_check.empty:
                 cols_check = [
@@ -437,6 +424,11 @@ def _render_detail(case_id: str) -> None:
 
     # ── Análisis del LLM ──────────────────────────────────────────────
     with st.container(border=True):
+        fallback = caso.get("fallback")
+        if not fallback and llm_resultado and isinstance(llm_resultado, dict):
+            fallback = llm_resultado.get("error")
+        if fallback:
+            st.warning(f"⚠️ Caso procesado con fallback: `{fallback}`")
         r_llm = caso.get("decision_llm")
         header = ":material/smart_toy: **Análisis del LLM**"
         if r_llm:
@@ -458,11 +450,12 @@ def _render_detail(case_id: str) -> None:
             señales = llm_resultado.get("señales_explicadas", [])
             if señales:
                 st.markdown("_Señales explicadas_")
-                peso_icono = {"alto": "🔴", "medio": "🟡", "bajo": "🟢"}
+                peso_icono_riesgo = {"alto": "🔴", "medio": "🟡", "bajo": "🟢"}
                 for s in señales:
+                    nombre = s.get("señal", "")
                     peso = s.get("peso", "medio").lower()
-                    icono = peso_icono.get(peso, "⚪")
-                    st.markdown(f"{icono} **{s.get('señal', '')}** · _{peso}_  \n{s.get('explicacion', '')}")
+                    icono = "🟢" if nombre in SEÑALES_POSITIVAS else peso_icono_riesgo.get(peso, "⚪")
+                    st.markdown(f"{icono} **{nombre}** · _{peso}_  \n{s.get('explicacion', '')}")
         elif decision == "ESCALAR":
             st.caption("Este caso fue escalado. Usa *Re-analizar* para generar el análisis del LLM.")
         else:

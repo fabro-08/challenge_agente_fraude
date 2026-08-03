@@ -1,35 +1,16 @@
 """Señales canónicas del pipeline de decisión de fraude.
 
-Las señales son identificadores cortos en ``snake_case`` que explican POR QUÉ
-se tomó una decisión. Dos fuentes:
+Las señales son identificadores cortos en ``snake_case`` que explican POR QUÉ se
+tomó una decisión. Fuente actual:
 
-- Reglas disparadas → mapeo ``regla_id → señal`` (cada regla de la DB contribuye
-  una señal canónica estable).
+- Reglas (``thresholds.yaml``) → ``RuleEngine`` genera ``senales_regla`` en
+  formato legible (p. ej. ``flags_fraude_previos >= 2``).
 - LLM (casos ambiguos) → el prompt pide nombres canónicos; ``normalizar_señal_llm``
   es un respaldo que mapea frases libres al mismo vocabulario.
 """
 
 import re
 import unicodedata
-
-# ── Mapeo regla → señal canónica ──────────────────────────────────────────
-# Regla_id de configuracion_reglas → señal canónica.
-SIGNAL_POR_REGLA: dict[str, str] = {
-    # Rechazo
-    "R1": "flags_fraude_previos_altos",
-    "R2": "compensacion_elevada",
-    "R3": "alta_frecuencia_reclamos",
-    "R4": "monto_solicitado_elevado",
-    "R5": "inconsistencia_gps",
-    "R6": "account_abuse",
-    "R7": "score_riesgo_alto",
-    # Aprobación
-    "A1": "retraso_critico_coherente",
-    "A2": "usuario_sano",
-    "A3": "gps_confirmada_usuario_antiguo",
-    # Escalación forzosa
-    "ESCALAR-1": "palabras_criticas_seguridad",
-}
 
 # Vocabulario canónico que debe emitir el LLM en ``señales_explicadas[].señal``.
 VOCABULARIO_LLM: list[str] = [
@@ -43,7 +24,20 @@ VOCABULARIO_LLM: list[str] = [
     "reclamo_subjetivo",
     "account_abuse",
     "palabras_criticas_seguridad",
+    "relato_coherente_con_evidencia",
+    "frecuencia_reclamos_normal",
+    "monto_compensacion_razonable",
+    "historial_intachable",
 ]
+
+# Señales protectoras que emite el LLM cuando recomienda APROBAR. En la UI se
+# semaforizan siempre en verde (no son riesgo); las demás se pintan por su peso.
+SEÑALES_POSITIVAS: set[str] = {
+    "relato_coherente_con_evidencia",
+    "frecuencia_reclamos_normal",
+    "monto_compensacion_razonable",
+    "historial_intachable",
+}
 
 # Mapeo de frases libres del LLM → señal canónica (respaldo robusto).
 SEÑALES_LLM_MAP: dict[str, str] = {
@@ -69,6 +63,7 @@ SEÑALES_LLM_MAP: dict[str, str] = {
     "palabras críticas": "palabras_criticas_seguridad",
 }
 
+
 def _norm_key(texto: str) -> str:
     """Normaliza texto a minúsculas sin acentos ni no-alfanuméricos."""
     t = unicodedata.normalize("NFKD", texto)
@@ -86,22 +81,6 @@ def _slugify(texto: str) -> str:
 
 _LLM_MAP_NORM: dict[str, str] = {_norm_key(k): v for k, v in SEÑALES_LLM_MAP.items()}
 _VOC_NORM: list[str] = [_norm_key(v) for v in VOCABULARIO_LLM]
-
-
-def senal_de_regla(regla_id: str, nombre: str = "") -> str:
-    """Devuelve la señal canónica de una regla disparada.
-
-    Args:
-        regla_id: Identificador de la regla (ej. "R1").
-        nombre: Nombre de la regla (fallback si no hay mapeo).
-
-    Returns:
-        Señal canónica en snake_case.
-    """
-    señal = SIGNAL_POR_REGLA.get(regla_id)
-    if señal:
-        return señal
-    return _slugify(nombre) if nombre else _slugify(regla_id)
 
 
 def normalizar_señal_llm(señal: str) -> str:
@@ -122,75 +101,3 @@ def normalizar_señal_llm(señal: str) -> str:
         if vn in clave:
             return VOCABULARIO_LLM[i]
     return _slugify(señal)
-
-
-# ── Señales de reglas: "campo operador umbral = valor real" ──────────
-
-
-def _fmt_valor(v: object) -> str:
-    """Formatea un valor para la señal: listas como [a, b], bools legibles."""
-    if isinstance(v, bool):
-        return "True" if v else "False"
-    if v is None:
-        return "NULL"
-    if isinstance(v, list):
-        return "[" + ", ".join(str(x) for x in v) + "]"
-    return str(v)
-
-
-def _palabras_en_texto(palabras: object, texto: object) -> list[str]:
-    """Devuelve las palabras de ``palabras`` presentes en ``texto`` (sin acentos)."""
-    if not texto or not isinstance(texto, str):
-        return []
-    t = _norm_key(texto)
-    coincidencias = []
-    for p in (palabras if isinstance(palabras, list) else [palabras]):
-        if _norm_key(str(p)) and _norm_key(str(p)) in t:
-            coincidencias.append(str(p))
-    return coincidencias
-
-
-def formato_senal_condicion(
-    campo: str, operador: str, valor_esperado: object, valor_actual: object
-) -> str:
-    """Señal legible de una condición de regla: ``campo operador umbral = valor_real``.
-
-    Para operadores de texto (``contains_any``/``contains_all``) se usan las
-    palabras clave que matchearon en lugar del texto completo del caso.
-
-    Args:
-        campo: Parámetro de la regla (ej. ``flags_fraude_previos``).
-        operador: Operador de la condición (``>=``, ``contains_any``, ...).
-        valor_esperado: Umbral configurado en la regla.
-        valor_actual: Valor real del caso evaluado.
-
-    Returns:
-        Señal en formato ``campo operador umbral = valor_real``.
-    """
-    if operador in ("contains_any", "contains_all"):
-        coincidencias = _palabras_en_texto(valor_esperado, valor_actual)
-        actual = ", ".join(coincidencias) if coincidencias else _fmt_valor(valor_actual)
-        return f"{campo} {operador} {_fmt_valor(valor_esperado)} = {actual}"
-    return f"{campo} {operador} {_fmt_valor(valor_esperado)} = {_fmt_valor(valor_actual)}"
-
-
-def formato_senal_regla(regla: dict) -> list[str]:
-    """Señales ``campo operador umbral = valor_real`` de una regla disparada.
-
-    Args:
-        regla: Item del checklist (``rule_details``) con las ``condiciones``
-            evaluadas (campo, operador, valor_esperado, valor_actual).
-
-    Returns:
-        Una señal por condición de la regla.
-    """
-    return [
-        formato_senal_condicion(
-            c.get("campo", ""),
-            c.get("operador", ""),
-            c.get("valor_esperado"),
-            c.get("valor_actual"),
-        )
-        for c in regla.get("condiciones", [])
-        if c.get("campo")
-    ]

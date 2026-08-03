@@ -54,6 +54,11 @@ services:
       ANALYZE_TIMEOUT: "120"
     ports:
       - "8501:8501"
+    volumes:
+      - ../src:/app/src
+      - ../docs:/app/docs:ro
+      - ../README.md:/app/README.md:ro
+      - ../CHECKPOINTS.md:/app/CHECKPOINTS.md:ro
     depends_on:
       - api
 

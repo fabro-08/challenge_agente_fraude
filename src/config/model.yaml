@@ -5,7 +5,8 @@
 # Overrides por env var (12-factor):
 #   MODEL_FRAUD, LLM_BASE_URL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_MAX_RETRIES,
 #   LLM_TIMEOUT_SECONDS, LLM_MAX_CONCURRENCIA, LLM_INTENTOS_PARSING,
-#   LLM_PROMPT_FILE, LLM_EXAMPLES_FILE.
+#   LLM_CIRCUIT_UMBRAL, LLM_CIRCUIT_VENTANA_S, BATCH_MAX_CONCURRENCIA,
+#   CASO_TIMEOUT_S, JOBS_MAX_TIMEOUT_S, LLM_PROMPT_FILE, LLM_EXAMPLES_FILE.
 
 llm:
   model: qwen/qwen3.7-flash          # override: MODEL_FRAUD
@@ -16,5 +17,10 @@ llm:
   timeout_seconds: 30
   max_concurrencia: 5
   intentos_parsing: 2
+  batch_concurrencia: 5          # casos procesados a la vez en batch
+  llm_circuit_umbral: 3          # fallos de proveedor que abren el circuit breaker
+  llm_circuit_ventana_s: 60       # ventana (s) para contar esos fallos
+  caso_timeout_s: 60             # timeout por caso en batch (asyncio.wait_for)
+  jobs_max_timeout_s: 3600        # tope duro del job (s) para proteger de loops
   prompt_file: llm_system.txt        # relativo a src/config/prompts/
   examples_file: llm_examples.md     # relativo a src/config/prompts/

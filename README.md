@@ -10,23 +10,43 @@ en lugar de 15-25 minutos.
 
 ---
 
+## Índice — Dónde encontrar cada cosa
+
+| Necesito | Dónde |
+|---|---|
+| Entender la solución y arrancar | `README.md` (abajo: Quickstart) |
+| Criterios de decisión (qué y por qué) | `docs/politicas_decision.md` |
+| Cambiar / crear reglas (cómo) | `docs/reglas_operacion.md` |
+| Arquitectura y flujo del agente | `docs/architecture.md` |
+| Variables y features del dataset | `docs/diccionario_datos.md` |
+| Análisis exploratorio del dataset (EDA) | `docs/reporte_eda.md` |
+| Cómo verificar cada step | `docs/verification.md` |
+| Convenciones de código | `docs/conventions.md` |
+| Auto-evaluación del estado final | `CHECKPOINTS.md` |
+| Mapa interno de navegación (agentes) | `AGENTS.md` |
+
+---
+
 ## Resumen de la solución
 
 | Componente | Qué hace |
 |---|---|
 | **Pipeline LangGraph** | `load_case → features → reglas → LLM → decisión final` |
-| **Motor de reglas versionado** | 11 reglas gestionadas por fraude en DB (sin código) con historial y simulador |
+| **Motor de reglas (YAML)** | 11 reglas en `src/rules/thresholds.yaml` (RuleEngine), usadas por el flujo del agente |
 | **LLM estructurado** | Analiza la descripción del reclamo en casos ambiguos y emite veredicto + señales explicadas |
-| **API REST (FastAPI)** | `/analyze`, `/analyze/batch`, `/cases`, `/rules` (CRUD + simulación), `/stats` |
-| **UI (Streamlit)** | Dashboard de KPIs, explorador de casos, configuración de reglas, políticas |
-| **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados y con checklist de reglas |
+| **API REST (FastAPI)** | `/analyze`, `/analyze/batch`, `/cases`, `/stats`, `/export/*` |
+| **UI (Streamlit)** | Dashboard de KPIs, explorador de casos por origen, políticas, documentación, descarga de entregables |
+| **PostgreSQL 16** | 150 casos originales + 100 sintéticos, todos analizados con decisión, justificación y señales |
 
-**Resultado sobre los 250 casos:** APROBAR 103 · RECHAZAR 101 · ESCALAR 46.
-Sobre los **150 casos originales**: APROBAR 67 · RECHAZAR 57 · ESCALAR 26
+**Resultado sobre los 250 casos:** APROBAR 73 · RECHAZAR 117 · ESCALAR 60.
+Sobre los **150 casos originales**: APROBAR 51 · RECHAZAR 68 · ESCALAR 31
 (ver `data/150casos_analizados.xlsx`).
 
+> La distribución exacta puede variar con reprocesos (el batch re-analyza casos).
+> Estas cifras corresponden al estado actual de `resolution_case`.
+
 **Stack:** Python 3.12 · LangGraph · FastAPI · Streamlit · PostgreSQL 16 · Docker ·
-Playwright/pytest (90 tests).
+Playwright/pytest (55 passed).
 
 ---
 
@@ -38,8 +58,15 @@ Playwright/pytest (90 tests).
 2. **ESCALAR no es un default:** solo se escala cuando hay ambigüedad real; el escalado
    forzoso (palabras críticas de marca) es una decisión explícita de seguridad que pasa
    por el LLM pero conserva `fuente='reglas'`.
-3. **Reglas versionadas en DB:** fraude edita thresholds desde la UI, cada cambio genera
-   nueva versión con autor, y el simulador muestra el impacto antes de guardar.
+3. **Reglas desde thresholds.yaml:** el flujo del agente usa el motor `RuleEngine`
+   con umbrales en `src/rules/thresholds.yaml` (documentado en
+   `docs/politicas_decision.md`). No hay reglas gestionadas en base de datos.
+
+4. **Cómo cambiar/crear reglas:** guía operativa paso a paso en
+   `docs/reglas_operacion.md` (umbrales, condiciones, palabras críticas, reproceso).
+5. **No se escribe en `recomendacion_agente`:** el `Dataset_caso_3.xlsx` original
+   se mantiene **read-only**; la decisión vive en `resolution_case` y se entrega en
+   el Excel derivado `data/150casos_analizados.xlsx` (columna `recomendacion`).
 
 ---
 
@@ -61,9 +88,8 @@ Agente CS (humano) ── HTTP :8501 ──► Streamlit UI
                          │  AMBIGUO ──► llm_classify ──► decision: APROBAR|RECHAZAR|ESCALAR (fuente=llm)
                                         │  SQL :5432
                                         ▼
-                              PostgreSQL 16 (infra/db/)
-                    cases · features · resolution_case · configuracion_reglas
-                    reglas_versiones · usuarios_fraude
+                               PostgreSQL 16 (infra/db/)
+                     cases · features · resolution_case
 ```
 
 Flujo de decisión: reglas **RECHAZAR** primero (prevenir fraude), luego **APROBAR**
@@ -82,7 +108,7 @@ Requisitos: Docker + Docker Compose v2, Python ≥ 3.12.
 # 1. Levanta DB + API + UI (seed automático: 250 casos analizados)
 make up
 
-# 2. Verifica el entorno (lint, typecheck, 90 tests, healthchecks)
+# 2. Verifica el entorno (lint, typecheck, tests, healthchecks)
 ./init.sh
 ```
 
@@ -93,44 +119,93 @@ Accesos:
 - PostgreSQL: `make psql`
 
 > `docker compose up` en un volumen nuevo inicializa la base con el estado final
-> (`infra/db/init/09_seed_completo.sql`): los 250 casos ya analizados y las 11
-> reglas seedeadas. No requiere corridas previas del pipeline.
+> (`infra/db/init/09_seed_completo.sql`): los 250 casos ya analizados. Las reglas
+> viven en `src/rules/thresholds.yaml` (no en DB). No requiere corridas previas del pipeline.
 
 ### Verificación completa
 
 ```bash
 ./init.sh                 # todos los bloques [OK]
-pytest tests/ -q          # 90 tests
+pytest tests/ -q          # 55 passed
 ```
 
 ---
 
-## Demo sugerida (en vivo)
+## Desplegar agente (otra máquina)
 
-El estado precargado permite mostrar la demo sin depender del LLM en tiempo real.
+Pasos para levantar el agente completo en una máquina limpia con solo Docker
+(para que lo prueben otros).
 
-| Paso | Qué mostrar | Caso |
-|---|---|---|
-| 1 | **Fraude claro** (RECHAZAR) | `COMP-0062` — 4 flags, score 13.5 |
-| 2 | **Legítimo** (APROBAR) | `COMP-0078` — 0 flags, ratio 0.59, GPS confirmada |
-| 3 | **Ambiguo** (ESCALAR + LLM) | `COMP-0004` — sin señales concluyentes |
-| 4 | **Escalado forzoso por marca** | `COMP-0072` — perfil limpio pero palabras críticas |
-| 5 | **Re-análisis on-demand** | botón "Re-analizar" en el detalle |
-| 6 | **Batch parametrizado** | `POST /analyze/batch {"limite": 5}` → poll `/jobs/{id}` |
-| 7 | **Editar regla + simular** | pestaña "Reglas" de la UI (versión + impacto sin guardar) |
-
-Los casos 1-2 se resuelven por reglas (al instante); los casos 3-4 (ambigüedad y
-marca) ya tienen el `llm_resultado` persistido, así que la demo carga sin esperar
-al LLM. El re-análisis de un caso ambiguo tarda ~15-24 s (espera del LLM);
-el batch corre en background y es parametrizable con `limite`.
+**Requisitos:** Docker + Docker Compose v2. No hace falta Python en la máquina.
 
 ```bash
-# Batch con límite (ej.: 5 casos)
-curl -s -X POST http://localhost:8000/analyze/batch \
-  -H "Content-Type: application/json" -d '{"limite": 5}'
-# → {"job_id": "...", "total_casos": 5, ...}
-curl -s http://localhost:8000/jobs/<job_id>
+# 1. Obtener el código
+git clone <url-del-repo> && cd case3_project
+
+# 2. Crear credenciales del LLM (obligatorio: no están en el repo)
+cp .env.example .env        # completar OPENROUTER_API_KEY=sk-or-v1-...
+#   Sin key la UI y los casos ya sembrados cargan, pero el re-análisis LLM degrada.
+
+# 3. Levantar los 3 servicios (db + api + ui)
+make up                     # docker compose -f infra/docker-compose.yml up -d --wait
+#   En un volumen nuevo, PostgreSQL ejecuta infra/db/init/*.sql en orden y
+#   siembra automáticamente los 250 casos ya analizados (sin pasos extra).
+
+# 4. Abrir la UI
+#   http://localhost:8501
+
+# 5. (Opcional) Verificar la base
+make psql                   # select count(*) from resolution_case; → 250
 ```
+
+Notas:
+
+- La **API es interna** (`api:8000`, sin puerto mapeado al host): la UI se comunica
+  con ella dentro de Docker. Para exponerla al host, agregar `ports: ["8000:8000"]`
+  al servicio `api` en `infra/docker-compose.yml`.
+- `./init.sh` y `pytest` necesitan un entorno Python local (`.venv`) con las
+  dependencias del repo; **no son necesarios** para correr el agente por Docker.
+- La documentación (página "Documentación" de la UI) y el reporte EDA se sirven
+  desde `docs/` vía volumen `:ro`.
+- Para reiniciar con base limpia: `docker compose -f infra/docker-compose.yml down -v`
+  (borra el volumen `pgdata` y vuelve a ejecutar el seed al levantar).
+
+---
+
+## Export de entregables (API)
+
+| Endpoint | Devuelve |
+|---|---|
+| `GET /export/excel?es_sintetico=false` (default) | Excel de los **150 casos originales** (bytes, descarga) |
+| `GET /export/excel?es_sintetico=true` | Excel de los **250 casos** (originales + sintéticos) |
+| `GET /export/politicas` | `docs/politicas_decision.md` descargable |
+| `GET /jobs/{id}/excel` | Excel del batch demo (modo memoria) |
+
+Los Excel se generan en memoria y se sirven como descarga; el servidor no escribe
+archivos. Desde la UI están en la sección **"Entregables"** del Dashboard, y la
+notebook `06_pipeline.ipynb` los regenera vía API.
+
+```bash
+curl -s http://localhost:8000/export/excel -o data/150casos_analizados.xlsx
+curl -s "http://localhost:8000/export/excel?es_sintetico=true" -o data/250casos_analizados.xlsx
+```
+
+---
+
+## Scripts de operación (CLI)
+
+Los scripts en `scripts/` son entrypoints de terminal que **reutilizan la misma
+lógica de `src/`** que la API (no hay código duplicado). Sirven para operar sin
+tener FastAPI corriendo.
+
+| Script | Qué hace | Comando |
+|---|---|---|
+| `run_batch.py` | Procesa casos con el pipeline (mismo worker que `POST /analyze/batch`) y persiste en `resolution_case` con auditoría (`batch_run_id`) | `python scripts/run_batch.py [--sintetico\|--pendientes\|--todos] [--limite N] [--case-ids COMP-0009 ...]` · `--demo` no escribe en `resolution_case` |
+| `export_casos_analizados.py` | Genera `data/150casos_analizados.xlsx` (igual que `GET /export/excel`) | `python scripts/export_casos_analizados.py [--output data/150casos_analizados.xlsx]` |
+| `backfill_features.py` | Rellena huecos de la tabla `features` (casos sin fila) con cálculo determinista. No toca `cases` ni `resolution_case` | `python scripts/backfill_features.py` |
+
+Nota: las **features** las calcula el propio pipeline (`compute_features`) al
+procesar; `backfill_features.py` solo es un respaldo sanitizador (migración 3-capas).
 
 ---
 
@@ -138,12 +213,30 @@ curl -s http://localhost:8000/jobs/<job_id>
 
 | Entregable | Ubicación |
 |---|---|
-| 150 casos con recomendación + justificación + señales | `data/150casos_analizados.xlsx` (regenerable con `python scripts/export_casos_analizados.py`) |
-| Políticas de decisión (criterios y manejo de ambigüedad) | `docs/politicas_decision.md` |
+| 150 casos con recomendación + justificación + señales | `data/150casos_analizados.xlsx` (regenerable con `python scripts/export_casos_analizados.py` o `GET /export/excel`) |
+| Políticas de decisión (criterios y manejo de ambigüedad) | `docs/politicas_decision.md` (descargable desde la UI / `GET /export/politicas`) |
 | Notebooks EDA / features / reglas / pipeline / sintéticos | `notebooks/` |
 | Arquitectura | `docs/architecture.md` |
 | Diccionario de datos | `docs/diccionario_datos.md` |
 | Tests y reportes | `tests/` · `log_review/` |
+
+---
+
+## Qué dejaría diferente con más tiempo
+
+- **Modelo de scoring / micro-ML:** con solo 150 casos el dataset no alcanza para
+  entrenar un modelo sólido, así que opté por reglas heurísticas + LLM. Con más
+  histórico, sumaría un score supervisado calibrado contra las decisiones reales.
+- **Conexión entre casos (fraude organizado):** hoy el agente analiza cada solicitud
+  de forma aislada. Con un `user360` y relaciones entre pedidos/users detectaría
+  redes de fraude que a nivel individual no se ven.
+- **Calibración continua:** falta un circuito de feedback del agente CS sobre las
+  decisiones (¿fue correcta la APROBAR/RECHAZAR?) como ground truth para ajustar
+  umbrales y veredictos del LLM con el tiempo.
+- **Prueba de carga explícita a 200+/día:** el batch es durable y concurrente, pero
+  validaría formalmente throughput y latencia bajo la demanda real del contexto.
+- **Versionado y CI/CD de umbrales:** gestionar `thresholds.yaml` con versionado y
+  despliegue para auditar qué reglas produjeron cada decisión histórica.
 
 ---
 
@@ -155,15 +248,17 @@ case3_project/
 ├── Makefile               → up / down / psql / seed
 ├── CHECKPOINTS.md         → criterios objetivos del estado final
 ├── data/                  → dataset original, sintéticos y output analizado
-├── docs/                  → arquitectura, políticas, diccionario, convenciones
+├── docs/                  → arquitectura, políticas, diccionario, reporte EDA, convenciones
 ├── notebooks/             → 01-EDA · 02-features · 03-reglas · 05-synthetic · 06-pipeline
 ├── src/
 │   ├── api/               → FastAPI (routers, schemas, services)
-│   ├── pipeline/          → LangGraph (state, graph, nodes)
-│   ├── rules/             → motor genérico, repository, simulador, seed
-│   └── ui/                → Streamlit (dashboard, casos, reglas, políticas)
-├── scripts/               → utilidades (export Excel)
-├── tests/                 → 90 tests (unitarios + integración + E2E Playwright)
+│   ├── batch/             → worker del batch durable (repository, rows)
+│   ├── config/            → config del modelo LLM (model.yaml, settings)
+│   ├── pipeline/          → LangGraph (state, graph, nodes, circuit breaker LLM)
+│   ├── rules/             → RuleEngine (thresholds.yaml), señales canónicas
+│   └── ui/                → Streamlit (dashboard, casos, políticas, documentación)
+├── scripts/               → utilidades (export Excel, run_batch)
+├── tests/                 → unitarios + integración + E2E Playwright
 ├── infra/
 │   ├── docker-compose.yml → db + api + ui
 │   ├── db/init/           → esquema + seed reproducible
@@ -175,7 +270,7 @@ case3_project/
 
 ## Testing
 
-- **90 tests:** 8 unitarios (reglas legacy) + 38 motor genérico + 13 contrato de salida + 21 API + 10 E2E Playwright.
+- **55 passed:** RuleEngine (YAML) + contrato de salida + API (incluye export y batch durable) + E2E Playwright (sin motor de reglas en DB).
 - Reporte HTML en `log_review/test_report.html` y Markdown en `log_review/test_e2e_*.md`.
 - Screenshots de cada pantalla en `log_review/`.
 

@@ -1,0 +1,1 @@
+"""Proceso batch durable en PostgreSQL (jobs, items, worker)."""

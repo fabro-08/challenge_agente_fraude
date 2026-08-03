@@ -5,8 +5,9 @@ completo de reglas evaluadas para maximizar determinismo (temperature=0).
 
 Nodo asíncrono: el cuello de botella es I/O (la espera de red del LLM), por lo
 que el event loop de FastAPI intercala las esperas de varios casos on-demand.
-La concurrencia de llamadas simultáneas al LLM está limitada por
-``LLM_SEMAFORO`` para respetar el rate-limit del proveedor (OpenRouter).
+La concurrencia de llamadas simultáneas al LLM está limitada por un semáforo
+por event loop (:func:`_semaforo_llm`) para respetar el rate-limit del proveedor
+(OpenRouter).
 """
 
 import asyncio
@@ -14,10 +15,13 @@ import json
 import logging
 import os
 import re
+from threading import Lock
+from weakref import WeakKeyDictionary
 
 from langchain_openai import ChatOpenAI
 
 from src.config import get_llm_config, load_prompts
+from src.pipeline.nodes.llm_circuit import INSTANCIA as _CIRCUITO
 from src.pipeline.state import CaseState
 from src.rules.signals import normalizar_señal_llm
 
@@ -33,7 +37,36 @@ SYSTEM_PROMPT = f"{_SYSTEM_PROMPT}\n\n{_EJEMPLOS}\n"
 _llm: ChatOpenAI | None = None
 
 # Límite de llamadas LLM simultáneas (protege el rate-limit del proveedor).
-LLM_SEMAFORO = asyncio.Semaphore(get_llm_config().max_concurrencia)
+# Se crea UN semáforo por event loop en ejecución: el batch corre en un loop
+# propio (hilo con `asyncio.run`), distinto del de FastAPI; un semáforo creado
+# a nivel módulo se ligaría a un loop ajeno y fallaría al adquirirse aquí.
+_llm_sems: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = WeakKeyDictionary()
+_llm_sems_lock = Lock()
+
+
+def _semaforo_llm() -> asyncio.Semaphore:
+    """Devuelve el semáforo de rate-limit LLM ligado al event loop actual."""
+    loop = asyncio.get_running_loop()
+    sem = _llm_sems.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(get_llm_config().max_concurrencia)
+        with _llm_sems_lock:
+            _llm_sems[loop] = sem
+    return sem
+
+
+# URLs (p. ej. del gestor de claves del proveedor) nunca llegan a mensajes de usuario.
+_URL_RE = re.compile(r"https?://\S+")
+
+
+class CircuitoAbierto(RuntimeError):
+    """El circuit breaker del proveedor LLM está abierto (no se debe llamar)."""
+
+
+# Configura el circuit breaker global con los parámetros de model.yaml.
+_cfg_llm = get_llm_config()
+_CIRCUITO.umbral = _cfg_llm.llm_circuit_umbral
+_CIRCUITO.ventana_s = _cfg_llm.llm_circuit_ventana_s
 
 
 def _crear_cliente() -> ChatOpenAI:
@@ -134,6 +167,25 @@ def _veredicto_discreto(veredicto: str) -> str:
     return "ESCALAR"
 
 
+def _motivo_proveedor(exc: Exception) -> str:
+    """Devuelve un motivo amigable y sanitizado para un fallo del proveedor LLM.
+
+    Args:
+        exc: Excepción lanzada por la invocación al proveedor.
+
+    Returns:
+        Texto corto con la causa (sin URLs ni credenciales).
+    """
+    mensaje = _URL_RE.sub("", str(exc)).strip()
+    baja = mensaje.lower()
+    if any(p in baja for p in ("limit", "quota", "credit", "usage")):
+        return "límite de uso de la clave del proveedor agotado"
+    codigo = getattr(getattr(exc, "response", None), "status_code", None)
+    if codigo is not None:
+        return f"error del proveedor LLM ({codigo})"
+    return (mensaje or "error desconocido del proveedor")[:120]
+
+
 async def llm_classify(state: CaseState) -> CaseState:
     features = state["features"]
     rule_details = state.get("rule_details") or []
@@ -170,11 +222,13 @@ async def llm_classify(state: CaseState) -> CaseState:
         f"Reglas evaluadas:\n{reglas_evaluadas_str}\n\n"
         f"Señales detectadas: {senales_str}\n"
         f"{nota_forzado}\n\n"
-        "Responde SOLO con el JSON exacto sin markdown."
+        "Responde ÚNICAMENTE con un objeto JSON válido. No incluyas bloques de código, backticks (`) ni saludos."
     )
 
     async def _invocar() -> str:
-        async with LLM_SEMAFORO:
+        if not _CIRCUITO.permitido():
+            raise CircuitoAbierto()
+        async with _semaforo_llm():
             respuesta = await llm.ainvoke(prompt)
         contenido = respuesta.content
         if isinstance(contenido, list):
@@ -183,6 +237,8 @@ async def llm_classify(state: CaseState) -> CaseState:
             )
         return str(contenido)
 
+    error_proveedor: Exception | None = None
+    motivo_fallback: str | None = None
     try:
         analisis = None
         for _ in range(get_llm_config().intentos_parsing):
@@ -190,18 +246,47 @@ async def llm_classify(state: CaseState) -> CaseState:
             analisis = _parsear_analisis(contenido)
             if analisis is not None:
                 break
-    except Exception as e:
-        logger.warning("llm_classify: fallo LLM en %s: %s", state.get("case_id"), e)
+    except CircuitoAbierto:
         analisis = None
+        motivo_fallback = "circuit_open"
+    except Exception as e:  # degradación controlada del proveedor
+        logger.warning("llm_classify: fallo LLM en %s: %s", state.get("case_id"), e)
+        _CIRCUITO.registrar_fallo()
+        analisis = None
+        error_proveedor = e
+        motivo_fallback = "provider"
+    else:
+        _CIRCUITO.registrar_exito()
 
     if analisis is None:
-        analisis = {
-            "justificacion": "No se pudo interpretar la respuesta del modelo.",
-            "resumen": "No se pudo generar el resumen automático.",
-            "veredicto": "ESCALAR: revisión manual requerida (error de parsing)",
-            "señales_explicadas": [],
-            "error": "parsing",
-        }
+        if motivo_fallback == "circuit_open":
+            analisis = {
+                "justificacion": "Proveedor LLM degradado (circuit abierto); revisión manual requerida.",
+                "resumen": "El proveedor LLM no está disponible; se deriva a revisión manual.",
+                "veredicto": "ESCALAR: revisión manual requerida (LLM no disponible)",
+                "señales_explicadas": [],
+                "error": "circuit_open",
+            }
+        elif error_proveedor is not None:
+            motivo = _motivo_proveedor(error_proveedor)
+            analisis = {
+                "justificacion": f"El proveedor LLM no respondió ({motivo}).",
+                "resumen": f"No se pudo generar el resumen automático: {motivo}.",
+                "veredicto": "ESCALAR: revisión manual requerida (LLM no disponible)",
+                "señales_explicadas": [],
+                "error": "provider_error",
+            }
+        else:
+            analisis = {
+                "justificacion": "No se pudo interpretar la respuesta del modelo.",
+                "resumen": "No se pudo generar el resumen automático.",
+                "veredicto": "ESCALAR: revisión manual requerida (error de parsing)",
+                "señales_explicadas": [],
+                "error": "parsing",
+            }
+
+    if motivo_fallback:
+        state.setdefault("fallback_info", []).append(f"llm_{motivo_fallback}")
 
     # Normalizar señales a nombres canónicos snake_case.
     for s in analisis.get("señales_explicadas", []):
@@ -214,5 +299,6 @@ async def llm_classify(state: CaseState) -> CaseState:
         "resumen": analisis.get("resumen", ""),
         "veredicto": analisis.get("veredicto", ""),
         "señales_explicadas": analisis.get("señales_explicadas", []),
+        "error": analisis.get("error"),
     }
     return state

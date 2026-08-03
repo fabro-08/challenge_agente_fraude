@@ -3,7 +3,6 @@
 import logging
 
 from src.pipeline.state import CaseState
-from src.rules import repository
 
 logger = logging.getLogger(__name__)
 
@@ -50,22 +49,7 @@ def generate_output(state: CaseState) -> CaseState:
     if not state.get("llm_resultado"):
         state["llm_resultado"] = None
 
-    # Consolidar el checklist por regla (anclado a la versión que procesó el caso)
-    # en el estado; lo persiste services.py en resolution_case.reglas_checklist.
-    rule_details = state.get("rule_details") or []
-    if rule_details:
-        try:
-            state["reglas_checklist"] = repository.enriquecer_checklist(rule_details)
-        except Exception as e:  # la decisión ya está en el estado
-            logger.warning(
-                "No se pudo enriquecer reglas_checklist para %s: %s",
-                state["case_id"],
-                e,
-            )
-            state["reglas_checklist"] = [
-                dict(r, version=0) for r in rule_details
-            ]
-    else:
-        state["reglas_checklist"] = []
+    # Sin motor de reglas en DB: no hay checklist por regla (reglas desde YAML).
+    state["reglas_checklist"] = []
 
     return state

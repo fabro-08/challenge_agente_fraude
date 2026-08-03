@@ -71,24 +71,6 @@ def test_casos_interfaz(page: Page, services):
     assert cualquier_contiene(["Explorar", "explorar", "Casos", "Filtrar", "filtro"], texto)
 
 
-# ── Reglas de Decisión ────────────────────────────────────────────────
-
-
-def test_reglas_carga(page: Page, services):
-    _go(page, "rules")
-    texto = _body_text(page)
-    assert cualquier_contiene(["Reglas Activas", "reglas activas"], texto)
-    assert cualquier_contiene(["Simular Cambio", "simular cambio"], texto)
-    assert cualquier_contiene(["Historial", "historial"], texto)
-    _screenshot(page, "rules")
-
-
-def test_reglas_boton_nueva(page: Page, services):
-    _go(page, "rules")
-    texto = _body_text(page)
-    assert cualquier_contiene(["Nueva Regla", "nueva regla", "+ Nueva"], texto)
-
-
 # ── Políticas ─────────────────────────────────────────────────────────
 
 
@@ -103,9 +85,17 @@ def test_politicas_carga(page: Page, services):
 
 
 def test_navegacion_4_paginas(page: Page, services):
-    for path in ("dashboard", "cases", "rules", "policies"):
+    for path in ("dashboard", "cases", "policies", "documentacion"):
         _go(page, path)
-        assert not page.locator("text=Error").is_visible(), f"Error en {path}"
+        assert page.locator("[data-testid='stException']").count() == 0, f"Error en {path}"
+
+
+def test_documentacion_carga(page: Page, services):
+    _go(page, "documentacion")
+    texto = _body_text(page).lower()
+    assert "documentación" in texto or "documentacion" in texto
+    assert page.locator("[data-testid='stException']").count() == 0
+    _screenshot(page, "documentacion")
 
 
 # ── Performance ────────────────────────────────────────────────────────

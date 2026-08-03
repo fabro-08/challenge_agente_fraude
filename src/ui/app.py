@@ -1,7 +1,7 @@
 """App Streamlit — UI para agentes CS de Rappi Caso 03.
 
 Usa ``st.navigation`` nativo para 4 páginas: Dashboard, Explorar Casos,
-Reglas de Decisión y Políticas. Sin entradas extra en el sidebar.
+Políticas y Documentación. Sin entradas extra en el sidebar.
 """
 
 from __future__ import annotations
@@ -48,10 +48,6 @@ st.markdown(
 
 # ── Branding en sidebar ────────────────────────────────────────────────
 with st.sidebar:
-    st.image(
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Rappi_logo.svg/200px-Rappi_logo.svg.png",
-        width=120,
-    )
     st.title("Rappi")
     st.markdown("**Revisión de Compensaciones**")
     st.divider()
@@ -61,8 +57,8 @@ with st.sidebar:
 # ── Navegación nativa (sin "app", sin selectbox) ──────────────────────
 dashboard = st.Page("views/dashboard.py", title="Dashboard", icon=":material/dashboard:")
 cases = st.Page("views/cases.py", title="Explorar Casos", icon=":material/search:")
-rules = st.Page("views/rules.py", title="Reglas de Decisión", icon=":material/tune:")
 policies = st.Page("views/policies.py", title="Políticas", icon=":material/policy:")
+documentacion = st.Page("views/documentacion.py", title="Documentación", icon=":material/menu_book:")
 
-pg = st.navigation([dashboard, cases, rules, policies])
+pg = st.navigation([dashboard, cases, policies, documentacion])
 pg.run()

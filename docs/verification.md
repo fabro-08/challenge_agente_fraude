@@ -85,22 +85,18 @@ python -c "from src.pipeline.graph import build_graph; print('import ok')"
 - [ ] ESCALAR forzoso (palabras críticas) → `final_decision=ESCALAR` forzado, `decision_regla=ESCALAR`, el LLM solo aporta análisis
 - [ ] Señales de reglas con formato `campo operador umbral = valor real` (ej. `flags_fraude_previos >= 2 = 3`)
 - [ ] Caso ambiguo → decide el LLM vía `decision_llm` (no fuerza decisión binaria)
-- [ ] Tests: `pytest tests/test_pipeline.py`
+ - [ ] Tests: `pytest tests/test_pipeline.py`
 
-### Step 06b — Motor genérico de reglas
+### Step 06 — Reglas (thresholds.yaml)
 
 ```bash
-python -m src.rules.seed_reglas
-pytest tests/test_generic_engine.py -v
+pytest tests/test_rules.py
 ```
 
-- [ ] 3 tablas creadas: `configuracion_reglas`, `reglas_versiones`, `usuarios_fraude` (el checklist por regla se consolida en `resolution_case.reglas_checklist`)
-- [ ] Seed inserta 11 reglas v1 (R1-R7, A1-A3, ESCALAR-1) — idempotente
-- [ ] Paridad: motor genérico decide igual que `RuleEngine` sobre los 250 casos
-- [ ] `graph.invoke(case)` consolida el checklist en `resolution_case.reglas_checklist` (JSONB) con `version_id` y `version`
-- [ ] Actualizar una regla crea nueva versión (historial en `reglas_versiones`)
-- [ ] Simulador devuelve transiciones sin escribir en DB
-- [ ] Tests: `pytest tests/test_generic_engine.py` (incluye mark `integration`)
+- [ ] `RuleEngine` clasifica los 250 casos desde `src/rules/thresholds.yaml` (sin DB)
+- [ ] El flujo del agente aplica las reglas: APROBAR/RECHAZAR por reglas sin LLM, ESCALAR forzado y AMBIGUO con LLM
+- [ ] `senales_regla` y `justificacion_regla` se generan desde `RuleEngine`
+- [ ] No existen tablas `configuracion_reglas`/`reglas_versiones`/`usuarios_fraude`
 
 ### Step 07 — API
 
@@ -112,7 +108,46 @@ curl -s -X POST http://localhost:8000/analyze -H "Content-Type: application/json
 - [ ] `GET /health` → 200
 - [ ] `POST /analyze` → recomendación + justificación
 - [ ] `POST /analyze/batch` → procesa todos los casos de la DB
+- [ ] `POST /analyze/batch {"persistir": false}` (modo demo) → corre el pipeline **sin escribir** en `resolution_case` (contar filas antes/después); las filas demo quedan en `batch_run_items.fila_demo`
+- [ ] `POST /analyze/batch {"aleatorio": true, "limite": 5}` → muestreo aleatorio
+- [ ] `GET /export/excel` → Excel de 150 casos (magic `PK`, 28 columnas, distribución 56/63/31)
+- [ ] `GET /export/excel?es_sintetico=true` → Excel de 250 casos
+- [ ] `GET /export/politicas` → 200, `text/markdown`, contiene "Políticas"
+- [ ] `GET /jobs/{id}/resultados` y `GET /jobs/{id}/excel` → filas y Excel del job demo
 - [ ] OpenAPI docs en `http://localhost:8000/docs`
+
+### Batch durable en PostgreSQL (refactor batch)
+
+El proceso batch ya no vive en un dict en memoria: el estado reside en
+`batch_runs` / `batch_run_items`. Verificar que el batch es **durable**:
+
+```bash
+python scripts/run_batch.py --pendientes            # CLI → mismo worker que la API
+docker exec rappi_db psql -U rappi -d rappi_cases \
+  -c "SELECT run_id, estado, procesados, errores FROM batch_runs ORDER BY id DESC LIMIT 5;"
+docker exec rappi_db psql -U rappi -d rappi_cases \
+  -c "SELECT count(*) FROM batch_run_items WHERE estado='failed';"
+```
+
+- [ ] `./init.sh` aplica la migración `06_batch_runs.sql` (tablas `batch_runs`, `batch_run_items`, columna `resolution_case.batch_run_id`)
+- [ ] `python scripts/run_batch.py --pendientes` → crea un run; a los segundos `estado` = `done`, `procesados` = total, sin errores
+- [ ] `resolution_case.batch_run_id` queda poblado para los casos del run (auditoría de qué lote generó cada análisis)
+- [ ] Retry por caso: un caso que falla se reintenta (2 intentos) antes de marcarse `failed`
+- [ ] **Recuperación:** con un run en `estado='running'` sin worker (simular `UPDATE batch_run_items SET estado='running'`), reiniciar `rappi_api` → el run pasa a `error` y sus items a `queued`
+- [ ] Modo demo (`--demo` o `persistir=false`): no escribe en `resolution_case`, pero las filas quedan en `batch_run_items.fila_demo` y el Excel descargable sigue funcionando
+
+### Robustez: fallbacks y guardrails
+
+```bash
+docker exec rappi_db psql -U rappi -d rappi_cases -c "\d resolution_case"  # columna fallback
+docker exec rappi_db psql -U rappi -d rappi_cases -c "SELECT fallback, COUNT(*) FROM resolution_case GROUP BY fallback;"
+```
+
+- [ ] `resolution_case` tiene la columna `fallback` (migración `ALTER TABLE ... ADD COLUMN`) y aparece en el Excel exportado (28 columnas) y en `GET /cases/{id}`
+- [ ] El dialto `fallback` se muestra como badge en el detalle del caso cuando está presente
+- [ ] Batch durable: `BATCH_MAX_CONCURRENCIA` limita los workers; un caso lento se corta con `caso_timeout_s` y el job dinámico escala con el volumen (no corta lotes grandes)
+- [ ] Circuit breaker LLM: tras `llm_circuit_umbral` fallos en la ventana, los ambiguos van a `ESCALAR circuit_open` sin re-llamar (verificar unit: `python -c "from src.pipeline.nodes.llm_circuit import CircuitProveedor; ..."`)
+- [ ] Guardrail anti inyección: el `llm_system.txt` trata la entrada como dato, no como instrucción
 
 ### Step 08 — UI Streamlit
 
@@ -132,7 +167,7 @@ pytest tests/test_e2e.py -v --browser chromium
 pytest tests/ --html=log_review/test_report.html --self-contained-html
 ```
 
-- [ ] 90 tests pasan (unitarios + integración + E2E browser)
+- [ ] 108 tests pasan (unitarios + integración + E2E browser)
 - [ ] Playwright interactúa con las 4 páginas sin crashes
 - [ ] Reporte HTML (`log_review/test_report.html`) y Markdown (`log_review/test_e2e_*.md`) generados
 - [ ] Screenshots de cada página en `log_review/`

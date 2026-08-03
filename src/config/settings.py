@@ -32,6 +32,11 @@ ENV_OVERRIDES: dict[str, str] = {
     "timeout_seconds": "LLM_TIMEOUT_SECONDS",
     "max_concurrencia": "LLM_MAX_CONCURRENCIA",
     "intentos_parsing": "LLM_INTENTOS_PARSING",
+    "batch_concurrencia": "BATCH_MAX_CONCURRENCIA",
+    "llm_circuit_umbral": "LLM_CIRCUIT_UMBRAL",
+    "llm_circuit_ventana_s": "LLM_CIRCUIT_VENTANA_S",
+    "caso_timeout_s": "CASO_TIMEOUT_S",
+    "jobs_max_timeout_s": "JOBS_MAX_TIMEOUT_S",
     "prompt_file": "LLM_PROMPT_FILE",
     "examples_file": "LLM_EXAMPLES_FILE",
 }
@@ -48,6 +53,11 @@ class LlmConfig(BaseModel):
         max_retries: Reintentos automáticos ante 429/5xx/timeout.
         timeout_seconds: Timeout de cada llamada.
         max_concurrencia: Llamadas simultáneas al proveedor.
+        batch_concurrencia: Casos de un batch procesados simultáneamente.
+        llm_circuit_umbral: Fallos de proveedor que abren el circuit breaker.
+        llm_circuit_ventana_s: Ventana (s) para contar esos fallos.
+        caso_timeout_s: Timeout por caso dentro de un batch (s).
+        jobs_max_timeout_s: Tope duro del job (s) para proteger de loops.
         intentos_parsing: Intentos de parsing ante respuestas no interpretables.
         prompt_file: Nombre del archivo del system prompt en ``prompts/``.
         examples_file: Nombre del archivo de few-shot examples en ``prompts/``.
@@ -61,6 +71,11 @@ class LlmConfig(BaseModel):
     timeout_seconds: float = 30.0
     max_concurrencia: int = 5
     intentos_parsing: int = 2
+    batch_concurrencia: int = 5
+    llm_circuit_umbral: int = 3
+    llm_circuit_ventana_s: float = 60.0
+    caso_timeout_s: float = 60.0
+    jobs_max_timeout_s: float = 3600.0
     prompt_file: str = "llm_system.txt"
     examples_file: str = "llm_examples.md"
 

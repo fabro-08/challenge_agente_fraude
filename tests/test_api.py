@@ -3,10 +3,16 @@
 Marcados con ``@pytest.mark.integration`` para separar de tests unitarios.
 """
 
+import io
+import time
+
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +35,7 @@ class TestHealth:
         assert data["status"] == "ok"
         assert data["db"] == "ok"
         assert data["casos"] >= 250
-        assert data["reglas_activas"] >= 10
+        assert data["reglas_yaml"] >= 10
         assert data["grafo"] == "compilado"
 
 
@@ -90,12 +96,8 @@ class TestAnalyze:
         assert data["fuente"] == "reglas"
         assert data["decision_regla"] == "RECHAZAR"
         assert data["decision_llm"] is None
-        assert data["justificacion_regla"]  # R1 — descripción de la regla
-        assert data["senales_regla"]        # campo operador umbral = valor real
-        assert len(data["checklist"]) > 0
-        for item in data["checklist"]:
-            assert "version" in item
-            assert "se_disparo" in item
+        assert data["justificacion_regla"]  # texto de reglas (desde thresholds.yaml)
+        assert data["senales_regla"]        # señales de reglas (desde thresholds.yaml)
 
     def test_analyze_escalar_forzado(self, client):
         """COMP-0002: palabras críticas → ESCALAR forzado; el LLM analiza pero
@@ -107,7 +109,7 @@ class TestAnalyze:
         assert data["fuente"] == "reglas"
         assert data["decision_regla"] == "ESCALAR"
         assert data["decision_llm"] in ("APROBAR", "RECHAZAR", "ESCALAR")
-        assert data["justificacion_regla"].startswith("ESCALAR-1 —")
+        assert data["justificacion_regla"] and "ESCALAR" in data["justificacion_regla"]
 
     def test_analyze_not_found(self, client):
         resp = client.post("/analyze", json={"case_id": "NO-EXISTE-999"})
@@ -132,145 +134,121 @@ class TestBatch:
         assert job["status"] in ("running", "done")
         assert job["total"] <= 1
 
+    def test_batch_aleatorio(self, client):
+        """Muestreo aleatorio: solo verifica el lanzamiento (job en background)."""
+        resp = client.post(
+            "/analyze/batch",
+            json={"limite": 3, "aleatorio": True, "persistir": False, "es_sintetico": False},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_casos"] == 3
+
+    def test_batch_memoria_no_persiste(self, client):
+        """Demo en memoria (persistir=False): no escribe resolution_case.
+
+        Usa casos resueltos por reglas (sin LLM) para que el job termine rápido.
+        """
+        from src.api import services
+
+        conn = services.conectar()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT c.caso_id FROM cases c
+                       JOIN resolution_case a ON a.caso_id = c.caso_id
+                       WHERE a.decision_regla IN ('APROBAR', 'RECHAZAR')
+                         AND a.decision_llm IS NULL
+                       ORDER BY c.caso_id LIMIT 2"""
+                )
+                ids = [r["caso_id"] for r in cur.fetchall()]
+                cur.execute("SELECT COUNT(*) AS n FROM resolution_case")
+                antes = cur.fetchone()["n"]
+        finally:
+            conn.close()
+        assert len(ids) == 2, "Se esperaban 2 casos resueltos por reglas"
+
+        resp = client.post("/analyze/batch", json={"case_ids": ids, "persistir": False})
+        assert resp.status_code == 200
+        job_id = resp.json()["job_id"]
+        assert resp.json()["total_casos"] == 2
+
+        for _ in range(30):
+            estado = client.get(f"/jobs/{job_id}").json()
+            if estado["status"] == "done":
+                break
+            time.sleep(1)
+        assert estado["status"] == "done"
+        assert estado["errores"] == 0
+        assert estado["procesados"] == 2
+
+        # resolution_case no se modificó
+        conn = services.conectar()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS n FROM resolution_case")
+                despues = cur.fetchone()["n"]
+        finally:
+            conn.close()
+        assert despues == antes, "El batch demo no debe escribir en resolution_case"
+
+        # Filas del job en memoria
+        resp = client.get(f"/jobs/{job_id}/resultados")
+        assert resp.status_code == 200
+        datos = resp.json()
+        assert datos["total"] == 2
+        assert {r["caso_id"] for r in datos["resultados"]} == set(ids)
+
+        # Excel de la demo
+        resp = client.get(f"/jobs/{job_id}/excel")
+        assert resp.status_code == 200
+        assert resp.content[:2] == b"PK"
+        df = pd.read_excel(io.BytesIO(resp.content))
+        assert len(df) == 2
+        assert "recomendacion" in df.columns
+
     def test_job_not_found(self, client):
         resp = client.get("/jobs/NO-EXISTE-999")
         assert resp.status_code == 404
 
 
-# ── Reglas ────────────────────────────────────────────────────────────
+# ── Export ─────────────────────────────────────────────────────────────
 
 
-class TestRules:
-    def test_list_rules(self, client):
-        resp = client.get("/rules")
+class TestExport:
+    def test_export_excel_150(self, client):
+        resp = client.get("/export/excel")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) >= 11
-        for r in data:
-            assert "regla_id" in r
-            assert "version_actual" in r
-            assert "config" in r
-            assert "condiciones" in r["config"]
+        assert resp.headers["content-type"] == XLSX_MIME
+        assert 'filename="150casos_analizados.xlsx"' in resp.headers["content-disposition"]
+        assert resp.content[:2] == b"PK"  # magic de zip/xlsx
 
-    def test_get_rule_ok(self, client):
-        resp = client.get("/rules/R1")
+        df = pd.read_excel(io.BytesIO(resp.content))
+        assert len(df) == 150
+        for col in (
+            "caso_id",
+            "recomendacion",
+            "decision_regla",
+            "decision_llm",
+            "justificacion_llm",
+            "justificacion_regla",
+            "senales_llm",
+            "senales_regla",
+            "resumen_llm",
+        ):
+            assert col in df.columns
+        assert set(df["recomendacion"].unique()) <= {"APROBAR", "RECHAZAR", "ESCALAR"}
+        assert df["recomendacion"].notna().sum() == 150
+
+    def test_export_excel_sinteticos_250(self, client):
+        resp = client.get("/export/excel", params={"es_sintetico": True})
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["regla_id"] == "R1"
-        assert data["version_actual"] >= 1
+        assert 'filename="250casos_analizados.xlsx"' in resp.headers["content-disposition"]
+        df = pd.read_excel(io.BytesIO(resp.content))
+        assert len(df) == 250
 
-    def test_get_rule_not_found(self, client):
-        resp = client.get("/rules/NO-EXISTE")
-        assert resp.status_code == 404
-
-    def test_update_rule_and_revert(self, client):
-        """Actualiza R1 (valor=99 → debe fallar ningún caso), verifica version, revierte."""
-        resp = client.put(
-            "/rules/R1",
-            json={
-                "config": {
-                    "descripcion": "Test: flags >= 99",
-                    "match": "all",
-                    "condiciones": [{"campo": "flags_fraude_previos", "operador": ">=", "valor": 99}],
-                },
-                "updated_by": "pytest",
-                "cambio_descripcion": "Test temporal de versionado",
-            },
-        )
+    def test_export_politicas(self, client):
+        resp = client.get("/export/politicas")
         assert resp.status_code == 200
-        assert resp.json()["version_actual"] > 1
-
-        # Revertir a la configuración canónica de R1 (no dejar basura)
-        resp = client.put(
-            "/rules/R1",
-            json={
-                "config": {
-                    "descripcion": "Usuario con 2 o más flags de fraude previos",
-                    "explicacion": "El usuario tiene 2 o más flags de fraude previos: ya está señalado por el sistema.",
-                    "match": "all",
-                    "condiciones": [{"campo": "flags_fraude_previos", "operador": ">=", "valor": 2}],
-                },
-                "updated_by": "pytest",
-                "cambio_descripcion": "Revertir test de versionado",
-            },
-        )
-        assert resp.status_code == 200
-
-    def test_update_invalid_field(self, client):
-        resp = client.put(
-            "/rules/R1",
-            json={
-                "config": {
-                    "descripcion": "Campo inválido",
-                    "match": "all",
-                    "condiciones": [{"campo": "CAMPO_INEXISTENTE_999", "operador": ">=", "valor": 5}],
-                },
-                "updated_by": "pytest",
-                "cambio_descripcion": "Test campo inválido",
-            },
-        )
-        assert resp.status_code == 422
-        assert "CAMPO_INEXISTENTE_999" in resp.json()["detail"]
-
-    def test_versions(self, client):
-        resp = client.get("/rules/R1/versions")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) >= 3  # v1 seed + v2 test anterior + v3 revert
-        assert data[0]["version"] > data[-1]["version"]
-
-    def test_campos(self, client):
-        resp = client.get("/rules/campos")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "comp_ratio" in data["campos"]
-        assert ">=" in data["operadores"]
-
-    def test_simulate_update_does_not_persist(self, client):
-        """Simular cambio a R1=3: detecta transiciones, pero config activa sigue siendo 2."""
-        resp = client.post(
-            "/rules/simulate",
-            json={
-                "accion": "update",
-                "regla_id": "R1",
-                "config": {
-                    "descripcion": "sim test",
-                    "match": "all",
-                    "condiciones": [{"campo": "flags_fraude_previos", "operador": ">=", "valor": 3}],
-                },
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["casos_evaluados"] >= 250
-        assert data["cambian_decision"] > 0
-        assert "RECHAZAR→LLM/ESCALAR" in data["transiciones"]
-
-        # Verificar que R1 no cambió en DB
-        resp = client.get("/rules/R1")
-        assert resp.status_code == 200
-        valor = resp.json()["config"]["condiciones"][0]["valor"]
-        assert valor == 2, f"R1 debió seguir=2, pero es {valor}"
-
-    def test_simulate_delete(self, client):
-        resp = client.post(
-            "/rules/simulate",
-            json={"accion": "delete", "regla_id": "R1"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["cambian_decision"] > 0
-
-
-# ── Usuarios ──────────────────────────────────────────────────────────
-
-
-class TestUsers:
-    def test_list_users(self, client):
-        resp = client.get("/users")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) >= 3
-        for u in data:
-            assert "nombre" in u
-            assert "email" in u
+        assert resp.headers["content-type"].startswith("text/markdown")
+        assert "Políticas" in resp.text

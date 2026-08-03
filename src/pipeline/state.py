@@ -41,6 +41,9 @@ class CaseState(TypedDict, total=False):
             participe aportando análisis.
         justification: Justificación principal legible (``justificacion_llm``
             si el LLM participó, si no ``justificacion_regla``).
+        fallback_info: Motivos de degradación (reglas_yaml, reglas__irrecuperable,
+            llm_circuit_open, llm_provider_error, llm_parsing, caso_timeout) para
+            auditar por qué se degradó cada caso.
         es_sintetico: Si el caso es sintético.
     """
 
@@ -61,4 +64,5 @@ class CaseState(TypedDict, total=False):
     llm_resultado: dict[str, Any] | None
     final_decision: str
     justification: str
+    fallback_info: list[str]
     es_sintetico: bool

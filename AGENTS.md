@@ -49,7 +49,7 @@
 
 ```
 01-eda ──┬── 02-features ── 03-reglas ──┐
-         │                              ├── 06-pipeline ── 06b-motor ── 07-api ── 08-ui ── 09-testing
+          │                              ├── 06-pipeline ── 07-api ── 08-ui ── 09-testing
          └── 05-synthetic ──────────────┘
 04-infra (paralelo, sin dependencias)
 ```
@@ -68,7 +68,6 @@
 
 - **No se entrena modelo ML:** el dataset es pequeño (150 casos). Se usan reglas heurísticas + LLM para texto libre.
 - **ESCALAR no es un default:** solo se escala cuando hay ambigüedad real. El caso ambiguo es lo que más se evalúa.
-- **Reglas gestionadas por fraude en DB:** desde el step 06b, las reglas viven en
-  `configuracion_reglas`/`reglas_versiones` (versionadas, editables sin código).
-  `src/rules/thresholds.yaml` queda solo como seed de bootstrap para entornos nuevos
-  (`python -m src.rules.seed_reglas`). Nunca hardcodear thresholds en la lógica.
+- **Reglas desde `thresholds.yaml`:** el flujo del agente usa el motor `RuleEngine`
+  con umbrales en `src/rules/thresholds.yaml` (sin base de datos; no hay
+  `configuracion_reglas`/`reglas_versiones`). Nunca hardcodear thresholds en la lógica.

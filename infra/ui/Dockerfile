@@ -5,6 +5,9 @@ WORKDIR /app
 RUN pip install --no-cache-dir streamlit pandas plotly httpx
 
 COPY src/ /app/src
+COPY docs/politicas_decision.md /app/docs/politicas_decision.md
+COPY README.md /app/README.md
+COPY CHECKPOINTS.md /app/CHECKPOINTS.md
 
 ENV PYTHONPATH=/app
 ENV API_URL=http://api:8000

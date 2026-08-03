@@ -1,6 +1,5 @@
 """Modelos Pydantic v2 de la API (requests y responses)."""
 
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -15,7 +14,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class RuleChecklistItem(BaseModel):
-    """Una fila del checklist de reglas de un caso."""
+    """Una fila del checklist de reglas de un caso (vacío: reglas desde YAML)."""
 
     regla_id: str
     version: int
@@ -46,11 +45,22 @@ class AnalyzeResponse(BaseModel):
 
 
 class BatchRequest(BaseModel):
-    """Request para procesar casos en lote (background)."""
+    """Request para procesar casos en lote (background).
+
+    Args:
+        case_ids: Selección manual de casos (ej. ``["COMP-0009", "COMP-0078"]``).
+            Si se provee, ignora el resto de filtros.
+        aleatorio: Muestreo aleatorio de ``limite`` casos.
+        persistir: ``True`` escribe en ``resolution_case``; ``False`` corre el
+            pipeline en memoria (demo) sin tocar la base de datos.
+    """
 
     es_sintetico: bool | None = None
     solo_pendientes: bool = False
     limite: int | None = Field(default=None, ge=1, le=1000)
+    case_ids: list[str] | None = None
+    aleatorio: bool = False
+    persistir: bool = True
 
 
 class BatchResponse(BaseModel):
@@ -65,7 +75,7 @@ class JobStatus(BaseModel):
     """Estado de un job batch."""
 
     job_id: str
-    status: Literal["running", "done", "error"]
+    status: Literal["queued", "running", "done", "error"]
     total: int
     procesados: int
     errores: int
@@ -83,6 +93,7 @@ class CaseListItem(BaseModel):
     restaurante: str | None = None
     valor_orden_mxn: float | None
     compensacion_solicitada_mxn: float | None
+    antiguedad_usuario_dias: float | None = None
     flags_fraude_previos: int | None
     recomendacion_agente: str | None
     fuente: str | None = None
@@ -116,7 +127,7 @@ class StatsResponse(BaseModel):
     total_casos: int
     distribucion: dict[str, int]
     por_origen: list[dict[str, Any]]
-    reglas_activas: int
+    reglas_yaml: int
 
 
 class HealthResponse(BaseModel):
@@ -125,122 +136,5 @@ class HealthResponse(BaseModel):
     status: str
     db: str
     casos: int
-    reglas_activas: int
+    reglas_yaml: int
     grafo: str
-
-
-# ── Reglas ────────────────────────────────────────────────────────────
-
-Operador = Literal[">", ">=", "<", "<=", "==", "!=", "in", "not_in", "contains_any", "contains_all"]
-TipoRegla = Literal["RECHAZAR", "APROBAR", "ESCALAR_FORZOSO"]
-
-
-class Condicion(BaseModel):
-    """Una condición de una regla."""
-
-    campo: str
-    operador: Operador
-    valor: Any
-
-
-class RuleConfig(BaseModel):
-    """Definición declarativa de una regla."""
-
-    descripcion: str = ""
-    explicacion: str = ""
-    match: Literal["all", "any"] = "all"
-    condiciones: list[Condicion] = Field(..., min_length=1)
-
-
-class RuleOut(BaseModel):
-    """Regla con su configuración activa."""
-
-    regla_id: str
-    nombre: str
-    tipo_regla: str
-    prioridad: int
-    activo: bool
-    version_actual: int
-    config: dict[str, Any]
-    updated_at: datetime
-
-
-class RuleCreateRequest(BaseModel):
-    """Request para crear una regla nueva."""
-
-    regla_id: str = Field(..., pattern=r"^[A-Z0-9-]{2,50}$")
-    nombre: str
-    tipo_regla: TipoRegla
-    prioridad: int = 0
-    config: RuleConfig
-    updated_by: str
-    cambio_descripcion: str = "Creación de la regla"
-
-
-class RuleUpdateRequest(BaseModel):
-    """Request para actualizar una regla (crea nueva versión)."""
-
-    config: RuleConfig
-    updated_by: str
-    cambio_descripcion: str = Field(..., min_length=5)
-    nombre: str | None = None
-    prioridad: int | None = None
-    activo: bool | None = None
-
-
-class RuleDeleteRequest(BaseModel):
-    """Request para desactivar una regla (auditable)."""
-
-    updated_by: str
-    cambio_descripcion: str = "Desactivación de la regla"
-
-
-class RuleVersionOut(BaseModel):
-    """Una versión histórica de una regla."""
-
-    version_id: int
-    version: int
-    config: dict[str, Any]
-    cambio_descripcion: str | None
-    updated_by: str | None
-    updated_at: datetime
-
-
-class CamposResponse(BaseModel):
-    """Campos disponibles para construir condiciones."""
-
-    campos: list[str]
-    operadores: list[str]
-
-
-class SimulateRequest(BaseModel):
-    """Request de simulación de impacto (efímera)."""
-
-    accion: Literal["update", "create", "delete"]
-    regla_id: str
-    config: RuleConfig | None = None
-    nombre: str | None = None
-    tipo_regla: TipoRegla | None = None
-    prioridad: int = 0
-    filtros: dict[str, Any] | None = None
-
-
-class SimulateResponse(BaseModel):
-    """Resultado de la simulación (sin persistir)."""
-
-    casos_evaluados: int
-    cambian_decision: int
-    transiciones: dict[str, int]
-    casos_afectados: list[dict[str, Any]]
-    nota: str
-
-
-# ── Usuarios ──────────────────────────────────────────────────────────
-
-
-class UserOut(BaseModel):
-    """Analista de fraude."""
-
-    usuario_id: int
-    nombre: str
-    email: str | None

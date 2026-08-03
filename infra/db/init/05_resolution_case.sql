@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS resolution_case (
     senales_llm         TEXT,
     senales_regla       TEXT,
     llm_resultado       JSONB       NULL,
+    fallback            TEXT        NULL,
     created_at          TIMESTAMP   NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP   NOT NULL DEFAULT NOW()
 );
