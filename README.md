@@ -14,7 +14,7 @@ en lugar de 15-25 minutos.
 
 | Necesito | Dónde |
 |---|---|
-| Entender la solución y arrancar | `README.md` (abajo: Quickstart) |
+| Entender la solución y arrancar | `README.md` (abajo: Despliegue paso a paso) |
 | Criterios de decisión (qué y por qué) | `docs/politicas_decision.md` |
 | Cambiar / crear reglas (cómo) | `docs/reglas_operacion.md` |
 | Arquitectura y flujo del agente | `docs/architecture.md` |
@@ -100,43 +100,21 @@ decisión final queda en `ESCALAR` con `fuente='reglas'`. Detalle en
 
 ---
 
-## Quickstart
+## Despliegue paso a paso
 
-Requisitos: Docker + Docker Compose v2, Python ≥ 3.12.
+Dos caminos, según lo que quieras hacer:
 
-```bash
-# 1. Levanta DB + API + UI (seed automático: 250 casos analizados)
-make up
+| Quieres… | Camino |
+|---|---|
+| Probar el agente completo con UI (DB + API + Streamlit) | **A · Docker** (no necesita Python) |
+| Ejecutar las notebooks (EDA, features, reglas, sintéticos, pipeline) | **B · Python local con uv** |
 
-# 2. Verifica el entorno (lint, typecheck, tests, healthchecks)
-./init.sh
-```
+### A · Agente con UI (Docker)
 
-Accesos:
+Levanta los 3 servicios (PostgreSQL 16 + FastAPI + Streamlit) con el seed
+automático de los 250 casos ya analizados. No hace falta Python en la máquina.
 
-- UI Streamlit: http://localhost:8501
-- API FastAPI: http://localhost:8000 (docs en http://localhost:8000/docs)
-- PostgreSQL: `make psql`
-
-> `docker compose up` en un volumen nuevo inicializa la base con el estado final
-> (`infra/db/init/09_seed_completo.sql`): los 250 casos ya analizados. Las reglas
-> viven en `src/rules/thresholds.yaml` (no en DB). No requiere corridas previas del pipeline.
-
-### Verificación completa
-
-```bash
-./init.sh                 # todos los bloques [OK]
-pytest tests/ -q          # 55 passed
-```
-
----
-
-## Desplegar agente (otra máquina)
-
-Pasos para levantar el agente completo en una máquina limpia con solo Docker
-(para que lo prueben otros).
-
-**Requisitos:** Docker + Docker Compose v2. No hace falta Python en la máquina.
+**Requisitos:** Docker + Docker Compose v2.
 
 ```bash
 # 1. Obtener el código
@@ -146,10 +124,10 @@ git clone <url-del-repo> && cd case3_project
 cp .env.example .env        # completar OPENROUTER_API_KEY=sk-or-v1-...
 #   Sin key la UI y los casos ya sembrados cargan, pero el re-análisis LLM degrada.
 
-# 3. Levantar los 3 servicios (db + api + ui)
-make up                     # docker compose -f infra/docker-compose.yml up -d --wait
+# 3. Levantar DB + API + UI (seed automático)
+make up
 #   En un volumen nuevo, PostgreSQL ejecuta infra/db/init/*.sql en orden y
-#   siembra automáticamente los 250 casos ya analizados (sin pasos extra).
+#   siembra los 250 casos ya analizados (sin pasos extra).
 
 # 4. Abrir la UI
 #   http://localhost:8501
@@ -158,13 +136,55 @@ make up                     # docker compose -f infra/docker-compose.yml up -d -
 make psql                   # select count(*) from resolution_case; → 250
 ```
 
+Accesos: UI Streamlit http://localhost:8501 · API FastAPI http://localhost:8000
+(docs en http://localhost:8000/docs) · PostgreSQL `make psql`.
+
+> Las reglas viven en `src/rules/thresholds.yaml` (no en DB). El seed trae el
+> estado final del análisis (`infra/db/init/09_seed_completo.sql`), así que no
+> hace falta correr el pipeline al levantar.
+
+### B · Notebooks (entorno local con uv)
+
+Ejecuta las notebooks de `notebooks/` (EDA, features, reglas, sintéticos,
+pipeline) con un entorno Python reproducible vía `uv`.
+
+**Requisitos:** Python ≥ 3.12 y `uv`.
+
+```bash
+# 1. Instalar uv (una vez por máquina)
+curl -LsSf https://astral.sh/uv/install.sh | sh    # macOS/Linux · o: brew install uv
+
+# 2. Obtener el código (si aún no lo clonaste)
+git clone <url-del-repo> && cd case3_project
+
+# 3. Crear el .venv e instalar las dependencias del repo
+uv sync
+
+# 4. Activar el entorno
+source .venv/bin/activate
+
+# 5. Abrir Jupyter y ejecutar las notebooks
+jupyter lab                 # luego abrir notebooks/01_eda.ipynb, 02_features.ipynb, …
+
+# 6. (Alternativa) Ejecutar una notebook sin abrir el navegador
+uv run jupyter nbconvert --to notebook --execute notebooks/01_eda.ipynb
+```
+
 Notas:
 
+- `01_eda`, `02_features`, `03_reglas`: trabajan solo con `data/` — corren sin LLM ni DB.
+- `05_synthetic` y `06_pipeline`: necesitan `.env` con `OPENROUTER_API_KEY`
+  (`cp .env.example .env`); `06_pipeline` además requiere DB + API levantadas
+  (`make up`, camino A) porque regenera entregables vía API.
+- El primer `uv sync` descarga las dependencias (puede tardar unos minutos).
+
+### Notas comunes
+
+- `./init.sh` y `pytest tests/ -q` (55 passed) verifican lint, typecheck y tests;
+  necesitan el entorno local del camino B (**no son necesarios** para correr el agente por Docker).
 - La **API es interna** (`api:8000`, sin puerto mapeado al host): la UI se comunica
   con ella dentro de Docker. Para exponerla al host, agregar `ports: ["8000:8000"]`
   al servicio `api` en `infra/docker-compose.yml`.
-- `./init.sh` y `pytest` necesitan un entorno Python local (`.venv`) con las
-  dependencias del repo; **no son necesarios** para correr el agente por Docker.
 - La documentación (página "Documentación" de la UI) y el reporte EDA se sirven
   desde `docs/` vía volumen `:ro`.
 - Para reiniciar con base limpia: `docker compose -f infra/docker-compose.yml down -v`
